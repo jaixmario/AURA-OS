@@ -93,14 +93,15 @@ flowchart TD
 ### 2. Kernel Core & Drivers (`kernel/arch/`)
 - **IDT (Interrupt Descriptor Table)**: 256 gates with CPU exception handlers (0..31) and hardware IRQs (32..47).
 - **8259 PIC**: Remaps Master PIC to INT 0x20-0x27 and Slave PIC to INT 0x28-0x2F.
-- **8254 PIT Timer**: Configured to 100 Hz (10ms resolution). Provides live uptime counter and left-side taskbar digital clock.
+- **8254 PIT Timer**: Configured to 100 Hz (10ms resolution). Provides live uptime counter and sub-second timing.
+- **CMOS Real-Time Clock (RTC)**: Interrogates hardware CMOS registers via I/O ports 0x70/0x71, decodes BCD/binary time and date, and provides live synchronization with host hardware.
 - **PS/2 Keyboard**: Decodes scancodes, tracks modifier keys (Shift, Caps Lock), and buffers keystrokes for GUI apps.
 - **PS/2 Mouse**: Configured to 200 Hz sample rate and 8 counts/mm resolution on IRQ12 with adaptive acceleration and selectable sensitivity (1.0x, 1.5x, 2.0x).
 
 ### 3. Graphics & Window Manager (`kernel/gfx/`, `kernel/wm/`)
 - **Double Buffering**: 3.2 MB backbuffer in physical RAM at `0x200000` accelerated with x86 32-bit dword block transfers (`rep movsl` and `rep stosl`). Guarantees 100% flicker-free 60+ FPS rendering.
 - **2D Primitives**: Anti-aliased circles, gradient fills, drop shadows, clipping rectangles, and crisp 8x16 typography.
-- **Taskbar & Shell**: Live digital clock widget prominently positioned on the left next to the Start button, dynamic multi-window taskbar tabs, and system tray.
+- **Taskbar & Shell**: Live CMOS system date and time widget (`YYYY-MM-DD HH:MM:SS`) prominently positioned on the right of the taskbar next to the system tray, dynamic multi-window tabs starting on the left, and Start menu.
 - **Window Management**:
   - Overlapping floating windows with z-order focus.
   - Smooth mouse title bar grabbing & dragging.
@@ -109,10 +110,10 @@ flowchart TD
   - Active window header accent highlighting.
 
 ### 4. Interactive Applications (`kernel/apps/`)
-- ⚙️ **Settings Control Panel**: Multi-tab control center with live desktop wallpaper theme switching (Deep Nebula, Midnight Dark, Cyberpunk, Emerald Forest), mouse sensitivity toggle (Slow 1.0x, Normal 1.5x, Fast 2.0x), hardware VESA framebuffer readouts, and system statistics.
+- ⚙️ **Settings Control Panel**: Multi-tab control center with live desktop wallpaper theme switching, Date & Time adjustments (hours, minutes, days, months, years) with bidirectional CMOS hardware synchronization and saving, mouse sensitivity toggle, hardware VESA framebuffer readouts, and system statistics.
 - 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 6MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
 - 📝 **Notes Editor**: Multiline text editor with line numbers gutter, live keyboard typing, backspace deletion, and document statistics (lines, characters, encoding).
-- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `theme`, `mem`, `ver`, `date`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
+- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `date`/`time`, `sync`, `theme`, `mem`, `ver`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
 - 🧮 **Calculator**: Functional 16-button clickable desktop calculator supporting addition, subtraction, multiplication, and division.
 - ℹ️ **System Info**: Displays OS architecture, display specs, live memory allocation, uptime, and animated CPU activity bar.
 
@@ -130,6 +131,7 @@ AuraOS/
 │   │   ├── idt.h / idt.c   # 256-entry Interrupt Descriptor Table
 │   │   ├── pic.h / pic.c   # 8259 PIC initialization & EOI
 │   │   ├── pit.h / pit.c   # 8254 Timer & Uptime counter
+│   │   ├── rtc.h / rtc.c   # CMOS Real-Time Clock & Date driver
 │   │   ├── kbd.h / kbd.c   # PS/2 Keyboard scancode decoder
 │   │   └── mouse.h / mouse.c # PS/2 Mouse packet decoder & coordinates
 │   ├── gfx/

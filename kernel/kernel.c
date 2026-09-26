@@ -3,6 +3,7 @@
 #include "arch/pit.h"
 #include "arch/kbd.h"
 #include "arch/mouse.h"
+#include "arch/rtc.h"
 #include "gfx/gfx.h"
 #include "wm/wm.h"
 #include "apps/apps.h"
@@ -73,7 +74,7 @@ static void draw_taskbar(void) {
     gfx_fillrect(0, tb_y, w, 48, COLOR_TASKBAR);
     gfx_draw_line(0, tb_y, w - 1, tb_y, COLOR_BORDER);
 
-    // Start Button ("✦ Aura")
+    // Start Button ("✦ Aura") on the LEFT
     int mx = mouse_get_x();
     int my = mouse_get_y();
     int is_hover_start = (mx >= 8 && mx <= 100 && my >= tb_y + 6 && my <= tb_y + 42);
@@ -85,58 +86,59 @@ static void draw_taskbar(void) {
     gfx_drawrect(8, tb_y + 6, 92, 36, COLOR_BORDER);
     gfx_draw_string(20, tb_y + 16, "✦ Aura", start_fg, COLOR_TRANSPARENT);
 
-    // Digital Clock Widget (Prominently on the LEFT)
-    int clock_x = 106;
-    int clock_w = 98;
+    // System Tray (RIGHT SIDE)
+    // RAM badge
+    int ram_w = 88;
+    int ram_x = w - 96;
+    gfx_fillrect(ram_x, tb_y + 10, ram_w, 28, RGB(30, 32, 48));
+    gfx_drawrect(ram_x, tb_y + 10, ram_w, 28, COLOR_BORDER);
+    gfx_draw_string(ram_x + 6, tb_y + 16, "RAM: 3.2M", COLOR_ACCENT, COLOR_TRANSPARENT);
+
+    // Live Status pulse dot
+    gfx_fill_circle(w - 106, tb_y + 24, 4, COLOR_GREEN);
+
+    // Live Date & Time Widget (on the RIGHT, directly next to tray)
+    int clock_w = 180;
+    int clock_x = w - 116 - clock_w;
     int is_hover_clock = (mx >= clock_x && mx <= clock_x + clock_w && my >= tb_y + 6 && my <= tb_y + 42);
 
-    unsigned int total_sec = pit_get_uptime_seconds();
-    unsigned int hrs = (total_sec / 3600) % 24;
-    unsigned int mins = (total_sec / 60) % 60;
-    unsigned int secs = total_sec % 60;
-
-    char time_str[16];
-    snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", hrs, mins, secs);
+    char dt_buf[32];
+    rtc_time_t t;
+    rtc_get_datetime(&t);
+    snprintf(dt_buf, sizeof(dt_buf), "%04u-%02u-%02u %02u:%02u:%02u",
+             t.year, t.month, t.day, t.hour, t.minute, t.second);
 
     gfx_fillrect(clock_x, tb_y + 6, clock_w, 36, is_hover_clock ? RGB(42, 46, 70) : RGB(30, 32, 48));
     gfx_drawrect(clock_x, tb_y + 6, clock_w, 36, is_hover_clock ? COLOR_ACCENT : COLOR_BORDER);
-    gfx_draw_string(clock_x + 17, tb_y + 16, time_str, is_hover_clock ? COLOR_ACCENT : COLOR_WHITE, COLOR_TRANSPARENT);
+    gfx_draw_string(clock_x + 14, tb_y + 16, dt_buf, is_hover_clock ? COLOR_ACCENT : COLOR_WHITE, COLOR_TRANSPARENT);
 
-    // Window items on taskbar (starts after Left Clock at x=212)
-    int btn_x = 212;
+    // Window items on taskbar (starts at x=108 after Start button, ends before Date/Time widget)
+    int btn_x = 108;
+    int tab_w = 98;
+    int tab_stride = 102;
     window_t *active = wm_get_active_window();
 
     for (int i = 0; i < MAX_WINDOWS; i++) {
         window_t *win = wm_get_window_at_index(i);
         if (!win || !win->is_open) continue;
 
+        if (btn_x + tab_w > clock_x - 6) break;
+
         int is_act = (win == active && !win->is_minimized);
         unsigned int tab_bg = is_act ? COLOR_ACTIVE_HEADER : RGB(30, 32, 48);
         unsigned int tab_fg = is_act ? COLOR_WHITE : COLOR_TEXT_MUTED;
 
-        if (btn_x + 110 > w - 110) break;
-
-        gfx_fillrect(btn_x, tb_y + 6, 110, 36, tab_bg);
-        gfx_drawrect(btn_x, tb_y + 6, 110, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
+        gfx_fillrect(btn_x, tb_y + 6, tab_w, 36, tab_bg);
+        gfx_drawrect(btn_x, tb_y + 6, tab_w, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
 
         // Truncate title to fit button
-        char title_buf[14];
-        strncpy(title_buf, win->title, 12);
-        title_buf[12] = '\0';
-        gfx_draw_string(btn_x + 7, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
+        char title_buf[12];
+        strncpy(title_buf, win->title, 11);
+        title_buf[11] = '\0';
+        gfx_draw_string(btn_x + 6, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
 
-        btn_x += 116;
+        btn_x += tab_stride;
     }
-
-    // System Tray (Right side)
-    // RAM badge
-    int ram_x = w - 104;
-    gfx_fillrect(ram_x, tb_y + 10, 96, 28, RGB(30, 32, 48));
-    gfx_drawrect(ram_x, tb_y + 10, 96, 28, COLOR_BORDER);
-    gfx_draw_string(ram_x + 8, tb_y + 16, "RAM: 3.2MB", COLOR_ACCENT, COLOR_TRANSPARENT);
-
-    // Live Status pulse dot
-    gfx_fill_circle(w - 114, tb_y + 24, 4, COLOR_GREEN);
 }
 
 static void draw_start_menu(void) {
@@ -187,6 +189,7 @@ static void draw_start_menu(void) {
 }
 
 static void handle_desktop_click(int mx, int my) {
+    int w = gfx_get_width();
     int h = gfx_get_height();
     int tb_y = h - 48;
 
@@ -223,17 +226,27 @@ static void handle_desktop_click(int mx, int my) {
         }
     }
 
-    // Taskbar window item clicked (starts after left clock at x=212)
-    if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 212) {
-        int btn_x = 212;
-        int w = gfx_get_width();
+    int clock_w = 180;
+    int clock_x = w - 116 - clock_w;
+
+    // Date & Time widget on the right clicked -> Open Date & Time settings!
+    if (mx >= clock_x && mx <= clock_x + clock_w && my >= tb_y + 6 && my <= tb_y + 42) {
+        app_settings_open_tab(1);
+        return;
+    }
+
+    // Taskbar window item clicked (starts after Start button at x=108)
+    int tab_w = 98;
+    int tab_stride = 102;
+    if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 108 && mx < clock_x - 6) {
+        int btn_x = 108;
         for (int i = 0; i < MAX_WINDOWS; i++) {
             window_t *win = wm_get_window_at_index(i);
             if (!win || !win->is_open) continue;
 
-            if (btn_x + 110 > w - 110) break;
+            if (btn_x + tab_w > clock_x - 6) break;
 
-            if (mx >= btn_x && mx <= btn_x + 110) {
+            if (mx >= btn_x && mx <= btn_x + tab_w) {
                 if (win->is_minimized) {
                     wm_restore_window(win);
                 } else {
@@ -246,7 +259,7 @@ static void handle_desktop_click(int mx, int my) {
                 }
                 return;
             }
-            btn_x += 116;
+            btn_x += tab_stride;
         }
     }
 }
@@ -266,6 +279,9 @@ void kernel_main(boot_info_t *bi) {
 
     // 4. Initialize PS/2 Mouse
     mouse_init(bi->width, bi->height);
+
+    // 5. Initialize Hardware CMOS Real-Time Clock
+    rtc_init();
 
     // Enable CPU interrupts!
     __asm__ volatile ("sti");

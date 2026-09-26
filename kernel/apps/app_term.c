@@ -1,6 +1,7 @@
 #include "apps.h"
 #include "../gfx/gfx.h"
 #include "../arch/pit.h"
+#include "../arch/rtc.h"
 #include "../arch/io.h"
 #include "../libc/string.h"
 
@@ -41,6 +42,8 @@ static void term_execute_command(void) {
         term_add_line("  calc     - open Calculator app");
         term_add_line("  settings - open Settings Control Panel");
         term_add_line("  sysinfo  - open System Specs app");
+        term_add_line("  date/time- show CMOS hardware clock");
+        term_add_line("  sync     - synchronize clock with CMOS");
         term_add_line("  mem      - inspect memory regions");
         term_add_line("  uptime   - show system uptime");
         term_add_line("  clear/cls- clear terminal screen");
@@ -68,9 +71,17 @@ static void term_execute_command(void) {
         term_add_line("  VRAM Buffer : 0x00200000 (3MB Double Buffer)");
         term_add_line("  Paint Canvas: 0x00600000 (Extended RAM)");
     } else if (strcmp(input_buf, "ver") == 0 || strcmp(input_buf, "version") == 0) {
-        term_add_line("AuraOS Version 1.1.0 [i686 Protected Mode]");
-    } else if (strcmp(input_buf, "date") == 0) {
-        term_add_line("System Date: 2026-09-26  (RTC/PIT Synchronized)");
+        term_add_line("AuraOS Version 1.2.0 [i686 Protected Mode]");
+    } else if (strcmp(input_buf, "date") == 0 || strcmp(input_buf, "time") == 0) {
+        rtc_time_t t;
+        rtc_get_datetime(&t);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "CMOS RTC: %04u-%02u-%02u %02u:%02u:%02u (Port 0x70/0x71)",
+                 t.year, t.month, t.day, t.hour, t.minute, t.second);
+        term_add_line(msg);
+    } else if (strcmp(input_buf, "sync") == 0) {
+        rtc_sync_from_cmos();
+        term_add_line("Synchronized clock with CMOS hardware RTC.");
     } else if (strcmp(input_buf, "info") == 0) {
         term_add_line("AuraOS v1.1 [i686 Protected Mode]");
         term_add_line("Video: 1024x768 Dynamic VBE TrueColor");

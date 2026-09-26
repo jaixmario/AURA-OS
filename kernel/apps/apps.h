@@ -9,5 +9,6 @@ void app_paint_launch(void);
 void app_sysinfo_launch(void);
 void app_notes_launch(void);
 void app_settings_launch(void);
+void app_settings_open_tab(int tab);
 
 #endif

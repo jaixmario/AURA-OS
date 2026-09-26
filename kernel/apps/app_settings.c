@@ -3,12 +3,14 @@
 #include "../gfx/gfx.h"
 #include "../arch/mouse.h"
 #include "../arch/pit.h"
+#include "../arch/rtc.h"
 #include "../libc/string.h"
 
-static int active_tab = 0; // 0=Themes, 1=Mouse, 2=Display, 3=About
+static int active_tab = 1; // 0=Themes, 1=Date & Time, 2=Mouse, 3=Display, 4=About
 
-static const char *tab_names[4] = {
+static const char *tab_names[5] = {
     "Personalize",
+    "Date & Time",
     "Mouse & Speed",
     "Display Specs",
     "About System"
@@ -54,18 +56,18 @@ static void settings_draw(window_t *win) {
     gfx_draw_string(wx + 16, wy + 16, "Settings", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Sidebar Tabs
-    for (int i = 0; i < 4; i++) {
-        int ty = wy + 48 + (i * 38);
+    for (int i = 0; i < 5; i++) {
+        int ty = wy + 48 + (i * 36);
         int is_act = (active_tab == i);
 
         if (is_act) {
-            gfx_fillrect(wx + 6, ty, sb_w - 12, 32, RGB(42, 46, 68));
-            gfx_drawrect(wx + 6, ty, sb_w - 12, 32, COLOR_ACCENT);
+            gfx_fillrect(wx + 6, ty, sb_w - 12, 30, RGB(42, 46, 68));
+            gfx_drawrect(wx + 6, ty, sb_w - 12, 30, COLOR_ACCENT);
             // Left indicator bar
-            gfx_fillrect(wx + 6, ty + 4, 3, 24, COLOR_ACCENT);
+            gfx_fillrect(wx + 6, ty + 3, 3, 24, COLOR_ACCENT);
         }
 
-        gfx_draw_string(wx + 16, ty + 8, tab_names[i], is_act ? COLOR_WHITE : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(wx + 16, ty + 7, tab_names[i], is_act ? COLOR_WHITE : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     }
 
     // 2. Content Panel
@@ -87,7 +89,6 @@ static void settings_draw(window_t *win) {
             gfx_fillrect(cx, by, cw, 48, is_sel ? RGB(36, 40, 60) : RGB(28, 30, 44));
             gfx_drawrect(cx, by, cw, 48, is_sel ? COLOR_ACCENT : COLOR_BORDER);
 
-            // Radio bullet
             if (is_sel) {
                 gfx_fill_circle(cx + 18, by + 24, 7, COLOR_ACCENT);
                 gfx_fill_circle(cx + 18, by + 24, 3, RGB(17, 17, 27));
@@ -103,7 +104,105 @@ static void settings_draw(window_t *win) {
             }
         }
     } else if (active_tab == 1) {
-        // Tab 1: Mouse & Speed
+        // Tab 1: Date & Time Configuration
+        gfx_draw_string(cx, cy, "Date & Time Configuration", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy + 18, "CMOS Real-Time Clock (RTC Ports 0x70 / 0x71):", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+        rtc_time_t t;
+        rtc_get_datetime(&t);
+
+        // 1. Current Live Date & Time Card
+        int card_y = cy + 40;
+        gfx_fillrect(cx, card_y, cw, 54, RGB(22, 24, 34));
+        gfx_drawrect(cx, card_y, cw, 54, COLOR_ACCENT);
+
+        char live_dt[48];
+        snprintf(live_dt, sizeof(live_dt), "Date: %04u-%02u-%02u    Time: %02u:%02u:%02u",
+                 t.year, t.month, t.day, t.hour, t.minute, t.second);
+        gfx_draw_string(cx + 16, card_y + 10, live_dt, COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 16, card_y + 30, "Source: Hardware CMOS RTC (Synchronized with host)", COLOR_GREEN, COLOR_TRANSPARENT);
+
+        // 2. Adjust Clock Time
+        int time_y = card_y + 64;
+        gfx_draw_string(cx, time_y, "Adjust Clock Time:", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        int tby = time_y + 20;
+        int btn_h = 28;
+
+        // Button: -1 Hr
+        gfx_fillrect(cx, tby, 64, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx, tby, 64, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 12, tby + 6, "-1 Hr", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: +1 Hr
+        gfx_fillrect(cx + 70, tby, 64, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 70, tby, 64, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 82, tby + 6, "+1 Hr", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: -1 Min
+        gfx_fillrect(cx + 144, tby, 68, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 144, tby, 68, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 152, tby + 6, "-1 Min", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: +1 Min
+        gfx_fillrect(cx + 218, tby, 68, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 218, tby, 68, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 226, tby + 6, "+1 Min", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: +10 Min
+        gfx_fillrect(cx + 292, tby, 72, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 292, tby, 72, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 298, tby + 6, "+10 Min", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // 3. Adjust Calendar Date
+        int date_y = time_y + 56;
+        gfx_draw_string(cx, date_y, "Adjust Calendar Date:", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        int dby = date_y + 20;
+
+        // Button: -1 Day
+        gfx_fillrect(cx, dby, 64, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx, dby, 64, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 8, dby + 6, "-1 Day", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: +1 Day
+        gfx_fillrect(cx + 70, dby, 64, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 70, dby, 64, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 78, dby + 6, "+1 Day", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: -1 Mon
+        gfx_fillrect(cx + 144, dby, 68, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 144, dby, 68, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 152, dby + 6, "-1 Mon", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: +1 Mon
+        gfx_fillrect(cx + 218, dby, 68, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 218, dby, 68, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 226, dby + 6, "+1 Mon", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // Button: +1 Year
+        gfx_fillrect(cx + 292, dby, 72, btn_h, RGB(36, 40, 60));
+        gfx_drawrect(cx + 292, dby, 72, btn_h, COLOR_BORDER);
+        gfx_draw_string(cx + 298, dby + 6, "+1 Year", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // 4. Hardware CMOS Sync Action
+        int act_y = date_y + 56;
+        gfx_draw_string(cx, act_y, "Hardware CMOS Synchronization:", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        int aby = act_y + 20;
+
+        // Button: Sync from CMOS
+        gfx_fillrect(cx, aby, 176, 32, RGB(42, 46, 68));
+        gfx_drawrect(cx, aby, 176, 32, COLOR_ACCENT);
+        gfx_draw_string(cx + 14, aby + 8, "⟳ Sync from CMOS", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        // Button: Save to CMOS
+        gfx_fillrect(cx + 188, aby, 176, 32, RGB(42, 46, 68));
+        gfx_drawrect(cx + 188, aby, 176, 32, COLOR_ACCENT);
+        gfx_draw_string(cx + 202, aby + 8, "✓ Save to CMOS", COLOR_WHITE, COLOR_TRANSPARENT);
+
+    } else if (active_tab == 2) {
+        // Tab 2: Mouse & Speed
         gfx_draw_string(cx, cy, "Mouse Pointer & Sensitivity", COLOR_WHITE, COLOR_TRANSPARENT);
         gfx_draw_string(cx, cy + 20, "Adjust hardware cursor speed and acceleration curve:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
@@ -140,8 +239,8 @@ static void settings_draw(window_t *win) {
         snprintf(pos_str, sizeof(pos_str), "Live Cursor Pos: (%d, %d)  |  Rate: 200 Hz", mouse_get_x(), mouse_get_y());
         gfx_draw_string(cx + 16, box_y + 14, pos_str, COLOR_WHITE, COLOR_TRANSPARENT);
 
-    } else if (active_tab == 2) {
-        // Tab 2: Display Specs
+    } else if (active_tab == 3) {
+        // Tab 3: Display Specs
         gfx_draw_string(cx, cy, "Display & Graphics Configuration", COLOR_WHITE, COLOR_TRANSPARENT);
         gfx_draw_string(cx, cy + 20, "Hardware VESA VBE 2.0+ Video Subsystem:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
@@ -161,8 +260,8 @@ static void settings_draw(window_t *win) {
         gfx_draw_string(cx, sy + 104, "Double Buffer :  3.2 MB Hardware Backbuffer (0x200000)", COLOR_TEXT, COLOR_TRANSPARENT);
         gfx_draw_string(cx, sy + 130, "Fast Blit     :  Hardware Enhanced REP MOVSL Accelerated", COLOR_GREEN, COLOR_TRANSPARENT);
 
-    } else if (active_tab == 3) {
-        // Tab 3: About System
+    } else if (active_tab == 4) {
+        // Tab 4: About System
         gfx_fillrect(cx, cy + 4, 60, 60, RGB(42, 46, 68));
         gfx_drawrect(cx, cy + 4, 60, 60, COLOR_ACCENT);
         gfx_draw_string(cx + 20, cy + 18, "✦", COLOR_ACCENT, COLOR_TRANSPARENT);
@@ -180,7 +279,7 @@ static void settings_draw(window_t *win) {
         gfx_draw_string(cx, ay + 24,  "Memory Model :  Ring 0 Flat Model with 1MB Stack (0x1FFFF0)", COLOR_TEXT, COLOR_TRANSPARENT);
         gfx_draw_string(cx, ay + 48,  "File Systems :  FAT16 Hard Disk & ISO9660 El Torito CD-ROM", COLOR_TEXT, COLOR_TRANSPARENT);
         gfx_draw_string(cx, ay + 72,  "Input Engine :  PS/2 Mouse (200Hz) & PS/2 Keyboard IRQ", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, ay + 96,  "Timer Quantum:  100 Hz PIT (10ms Resolution)", COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, ay + 96,  "Timer & RTC  :  100 Hz PIT & CMOS Hardware Real-Time Clock", COLOR_TEXT, COLOR_TRANSPARENT);
 
         char up_str[48];
         snprintf(up_str, sizeof(up_str), "System Uptime:  %u seconds (%u ticks)", pit_get_uptime_seconds(), pit_get_ticks());
@@ -194,9 +293,9 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
 
     // Check sidebar tabs clicks
     if (rx >= 6 && rx <= sb_w - 6) {
-        for (int i = 0; i < 4; i++) {
-            int ty = 48 + (i * 38);
-            if (ry >= ty && ry <= ty + 32) {
+        for (int i = 0; i < 5; i++) {
+            int ty = 48 + (i * 36);
+            if (ry >= ty && ry <= ty + 30) {
                 active_tab = i;
                 return;
             }
@@ -217,6 +316,45 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
             }
         }
     } else if (active_tab == 1) {
+        // Date & Time buttons
+        int card_y = 16 + 40;
+        int time_y = card_y + 64;
+        int tby = time_y + 20;
+        int btn_h = 28;
+
+        if (ry >= tby && ry <= tby + btn_h) {
+            if (rx >= cx && rx <= cx + 64)         { rtc_adjust_hour(-1); return; }
+            if (rx >= cx + 70 && rx <= cx + 134)   { rtc_adjust_hour(+1); return; }
+            if (rx >= cx + 144 && rx <= cx + 212)  { rtc_adjust_minute(-1); return; }
+            if (rx >= cx + 218 && rx <= cx + 286)  { rtc_adjust_minute(+1); return; }
+            if (rx >= cx + 292 && rx <= cx + 364)  { rtc_adjust_minute(+10); return; }
+        }
+
+        int date_y = time_y + 56;
+        int dby = date_y + 20;
+        if (ry >= dby && ry <= dby + btn_h) {
+            if (rx >= cx && rx <= cx + 64)         { rtc_adjust_day(-1); return; }
+            if (rx >= cx + 70 && rx <= cx + 134)   { rtc_adjust_day(+1); return; }
+            if (rx >= cx + 144 && rx <= cx + 212)  { rtc_adjust_month(-1); return; }
+            if (rx >= cx + 218 && rx <= cx + 286)  { rtc_adjust_month(+1); return; }
+            if (rx >= cx + 292 && rx <= cx + 364)  { rtc_adjust_year(+1); return; }
+        }
+
+        int act_y = date_y + 56;
+        int aby = act_y + 20;
+        if (ry >= aby && ry <= aby + 32) {
+            if (rx >= cx && rx <= cx + 176) {
+                rtc_sync_from_cmos();
+                return;
+            }
+            if (rx >= cx + 188 && rx <= cx + 364) {
+                rtc_time_t t;
+                rtc_get_datetime(&t);
+                rtc_set_datetime(&t);
+                return;
+            }
+        }
+    } else if (active_tab == 2) {
         // Mouse speed buttons
         for (int i = 0; i < 3; i++) {
             int by = 66 + (i * 58);
@@ -228,8 +366,13 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
     }
 }
 
+void app_settings_open_tab(int tab) {
+    if (tab >= 0 && tab < 5) active_tab = tab;
+    app_settings_launch();
+}
+
 void app_settings_launch(void) {
-    window_t *win = wm_create_window("Settings Control Panel", 220, 110, 540, 390, RGB(28, 30, 44));
+    window_t *win = wm_create_window("Settings Control Panel", 200, 90, 560, 420, RGB(28, 30, 44));
     if (!win) return;
     win->draw_client = settings_draw;
     win->on_click = settings_click;
