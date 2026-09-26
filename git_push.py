@@ -38,14 +38,11 @@ def push_update(message=None):
     run(["git", "add", "."], "git add .")
 
     status_res = subprocess.run(["git", "status", "--porcelain"], cwd=cwd, capture_output=True, text=True)
-    if not status_res.stdout.strip():
-        print("[*] Working tree clean, nothing to commit.")
-        return True
+    if status_res.stdout.strip():
+        if not message:
+            message = "Update AuraOS system files and build artifacts"
+        run(["git", "commit", "-m", message], "git commit")
 
-    if not message:
-        message = "Update AuraOS system files and build artifacts"
-
-    run(["git", "commit", "-m", message], "git commit")
     push_res = subprocess.run(["git", "push", "origin", "main"], cwd=cwd, capture_output=True, text=True)
     print("[*] Push result:\n" + push_res.stdout.replace(token, "***") + "\n" + push_res.stderr.replace(token, "***"))
     if push_res.returncode == 0:
