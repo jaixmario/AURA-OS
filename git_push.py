@@ -4,6 +4,15 @@ import sys
 
 token = os.environ.get("GITHUB_TOKEN")
 if not token:
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment")
+        token, _ = winreg.QueryValueEx(key, "GITHUB_TOKEN")
+        winreg.CloseKey(key)
+    except Exception:
+        pass
+
+if not token:
     print("[!] Error: GITHUB_TOKEN environment variable is not set.")
     sys.exit(1)
 

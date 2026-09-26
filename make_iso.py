@@ -71,15 +71,17 @@ HEAP_SIZE_MB=16
     cmd = [
         mkisofs,
         "-V", "AURA_OS",
+        "-p", "AuraOS",
+        "-A", "AuraOS",
         "-J", "-R", # Joliet & Rock Ridge extensions
         "-b", "boot.bin", # Boot image
         "-no-emul-boot",  # El Torito No Emulation
         "-boot-load-size", "128", # Load 128 sectors (64 KB)
-        "-o", iso_path,
-        iso_root
+        "-o", os.path.basename(iso_path),
+        "iso_root"
     ]
 
-    res = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    res = subprocess.run(cmd, env=env, cwd=project_dir, capture_output=True, text=True)
     if res.returncode != 0:
         print("[!] mkisofs error:\n", res.stderr)
         raise RuntimeError(f"mkisofs failed with code {res.returncode}")

@@ -300,11 +300,11 @@ void kernel_main(boot_info_t *bi) {
 
     // Launch default initial windows
     app_sysinfo_launch();
-    app_notes_launch();
     app_calc_launch();
     app_term_launch();
     app_paint_launch();
     app_settings_launch();
+    app_notes_launch();
     app_files_launch();
 
     // Main Desktop Event & Render Loop

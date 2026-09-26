@@ -38,6 +38,7 @@ static void term_execute_command(void) {
     if (strcmp(input_buf, "help") == 0) {
         term_add_line("AuraOS Terminal Commands:");
         term_add_line("  files    - open File Explorer GUI");
+        term_add_line("  edit <f> - edit file in Notes Editor");
         term_add_line("  ls / dir - list files in storage");
         term_add_line("  cat <f>  - display file contents");
         term_add_line("  touch <f>- create empty file");
@@ -104,6 +105,14 @@ static void term_execute_command(void) {
     } else if (strcmp(input_buf, "paint") == 0) {
         app_paint_launch();
         term_add_line("Launched Canvas Paint.");
+    } else if (strncmp(input_buf, "edit ", 5) == 0) {
+        const char *fname = input_buf + 5;
+        app_notes_open_file(fname);
+        term_add_line("Opened file in Notes Editor.");
+    } else if (strncmp(input_buf, "notes ", 6) == 0) {
+        const char *fname = input_buf + 6;
+        app_notes_open_file(fname);
+        term_add_line("Opened file in Notes Editor.");
     } else if (strcmp(input_buf, "notes") == 0) {
         app_notes_launch();
         term_add_line("Launched Notes Editor.");

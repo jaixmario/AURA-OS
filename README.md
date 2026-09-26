@@ -110,11 +110,11 @@ flowchart TD
   - Active window header accent highlighting.
 
 ### 4. Interactive Applications (`kernel/apps/`)
-- 📁 **File Explorer**: Graphical storage manager with split navigation (`Storage C:`, `Documents`, `System Files`), file attributes, real-time storage metrics, file creation, deletion, inline content preview, and direct `Open in Notes` editor integration.
+- 📁 **File Explorer**: User-friendly storage manager featuring a modern dark-glass interface with breadcrumb location bar, top action toolbar (`Open in Editor`, `+ New`, `Delete`, `Refresh`), sidebar category filters (`Storage C:`, `Documents`, `System Files`) with live badge counts, drive usage progress bar, color-coded file badges (`[TXT]`, `[CFG]`, `[SYS]`, `[SH]`, `[LOG]`), live monospace code preview card, double-click to open, and keyboard navigation (W/S, Enter, D, N).
 - ⚙️ **Settings Control Panel**: Multi-tab control center with live desktop wallpaper theme switching, Date & Time adjustments (hours, minutes, days, months, years) with bidirectional CMOS hardware synchronization and saving, mouse sensitivity toggle, hardware VESA framebuffer readouts, and system statistics.
 - 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 6MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
-- 📝 **Notes Editor**: Multiline text editor with line numbers gutter, live keyboard typing, backspace deletion, and document statistics (lines, characters, encoding).
-- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `files`, `ls`/`dir`, `cat`, `touch`, `rm`, `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `date`/`time`, `sync`, `theme`, `mem`, `ver`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
+- 📝 **Notes Editor**: Multiline document editor with top action toolbar (`+ New`, `Open File`, `Save`, `Save As`), active file indicator badge (`[ok]` / `* (Mod)`), interactive in-window Open File picker dialog, direct VFS read/write persistence, gutter line numbering, and seamless inter-app opening from File Explorer and Terminal (`edit <file>`).
+- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `files`, `edit <f>`, `ls`/`dir`, `cat`, `touch`, `rm`, `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `date`/`time`, `sync`, `theme`, `mem`, `ver`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
 - 🧮 **Calculator**: Functional 16-button clickable desktop calculator supporting addition, subtraction, multiplication, and division.
 - ℹ️ **System Info**: Displays OS architecture, display specs, live memory allocation, uptime, and animated CPU activity bar.
 
