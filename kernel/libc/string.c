@@ -4,8 +4,23 @@
 void *memset(void *dest, int c, size_t n) {
     unsigned char *d = (unsigned char *)dest;
     unsigned char val = (unsigned char)c;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = val;
+
+    if (n >= 16) {
+        while (((unsigned int)d & 3) && n > 0) {
+            *d++ = val;
+            n--;
+        }
+        unsigned int val32 = (val << 24) | (val << 16) | (val << 8) | val;
+        size_t dwords = n >> 2;
+        unsigned int *d32 = (unsigned int *)d;
+        while (dwords--) {
+            *d32++ = val32;
+        }
+        d = (unsigned char *)d32;
+        n &= 3;
+    }
+    while (n--) {
+        *d++ = val;
     }
     return dest;
 }
@@ -13,8 +28,24 @@ void *memset(void *dest, int c, size_t n) {
 void *memcpy(void *dest, const void *src, size_t n) {
     unsigned char *d = (unsigned char *)dest;
     const unsigned char *s = (const unsigned char *)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
+
+    if (n >= 16 && (((unsigned int)d & 3) == ((unsigned int)s & 3))) {
+        while (((unsigned int)d & 3) && n > 0) {
+            *d++ = *s++;
+            n--;
+        }
+        size_t dwords = n >> 2;
+        unsigned int *d32 = (unsigned int *)d;
+        const unsigned int *s32 = (const unsigned int *)s;
+        while (dwords--) {
+            *d32++ = *s32++;
+        }
+        d = (unsigned char *)d32;
+        s = (const unsigned char *)s32;
+        n &= 3;
+    }
+    while (n--) {
+        *d++ = *s++;
     }
     return dest;
 }

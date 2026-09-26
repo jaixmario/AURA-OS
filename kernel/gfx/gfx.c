@@ -46,10 +46,16 @@ void gfx_reset_clip(void) {
 }
 
 void gfx_clear(unsigned int color) {
+    if (!boot_info) return;
     int total = boot_info->width * boot_info->height;
-    for (int i = 0; i < total; i++) {
-        backbuffer[i] = color;
-    }
+    unsigned int *d = backbuffer;
+    __asm__ volatile (
+        "cld\n"
+        "rep stosl\n"
+        : "+D"(d), "+c"(total)
+        : "a"(color)
+        : "memory"
+    );
 }
 
 void gfx_putpixel(int x, int y, unsigned int color) {
@@ -64,12 +70,18 @@ void gfx_fillrect(int x, int y, int w, int h, unsigned int color) {
     int y1 = (y + h > clip_y1) ? clip_y1 : (y + h);
 
     if (x0 >= x1 || y0 >= y1) return;
+    int count = x1 - x0;
 
     for (int cy = y0; cy < y1; cy++) {
-        int row_idx = cy * boot_info->width;
-        for (int cx = x0; cx < x1; cx++) {
-            backbuffer[row_idx + cx] = color;
-        }
+        unsigned int *dest = backbuffer + (cy * boot_info->width + x0);
+        int cnt = count;
+        __asm__ volatile (
+            "cld\n"
+            "rep stosl\n"
+            : "+D"(dest), "+c"(cnt)
+            : "a"(color)
+            : "memory"
+        );
     }
 }
 
@@ -275,11 +287,29 @@ void gfx_swap_buffers(void) {
             }
         }
     } else if (bpp == 32) {
-        for (int y = 0; y < h; y++) {
-            unsigned int *dest_row = (unsigned int *)(vram + (y * pitch));
-            unsigned int *src_row = backbuffer + (y * w);
-            for (int x = 0; x < w; x++) {
-                dest_row[x] = src_row[x];
+        if (pitch == w * 4) {
+            unsigned int *d = (unsigned int *)vram;
+            unsigned int *s = backbuffer;
+            int total = w * h;
+            __asm__ volatile (
+                "cld\n"
+                "rep movsl\n"
+                : "+D"(d), "+S"(s), "+c"(total)
+                :
+                : "memory"
+            );
+        } else {
+            for (int y = 0; y < h; y++) {
+                unsigned int *dest_row = (unsigned int *)(vram + (y * pitch));
+                unsigned int *src_row = backbuffer + (y * w);
+                int count = w;
+                __asm__ volatile (
+                    "cld\n"
+                    "rep movsl\n"
+                    : "+D"(dest_row), "+S"(src_row), "+c"(count)
+                    :
+                    : "memory"
+                );
             }
         }
     }

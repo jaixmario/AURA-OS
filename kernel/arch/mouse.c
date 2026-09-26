@@ -78,6 +78,13 @@ static void mouse_callback(registers_t *regs) {
 
         // Discard overflow
         if (!(flags & 0xC0)) {
+            // Smooth adaptive acceleration curve
+            int abs_dx = (dx < 0) ? -dx : dx;
+            int abs_dy = (dy < 0) ? -dy : dy;
+
+            if (abs_dx > 4) dx += (dx > 0) ? (abs_dx - 4) / 2 : -(abs_dx - 4) / 2;
+            if (abs_dy > 4) dy += (dy > 0) ? (abs_dy - 4) / 2 : -(abs_dy - 4) / 2;
+
             mouse_x += dx;
             mouse_y -= dy; // Invert Y because mouse coords go down-up, screen coords up-down
 
@@ -121,6 +128,18 @@ void mouse_init(int screen_w, int screen_h) {
     // Set default settings
     mouse_write(0xF6);
     mouse_read(); // ACK (0xFA)
+
+    // Set sample rate to 200 Hz (ultra-smooth)
+    mouse_write(0xF3);
+    mouse_read(); // ACK
+    mouse_write(200);
+    mouse_read(); // ACK
+
+    // Set resolution to 8 counts/mm
+    mouse_write(0xE8);
+    mouse_read(); // ACK
+    mouse_write(0x03);
+    mouse_read(); // ACK
 
     // Enable data reporting
     mouse_write(0xF4);
