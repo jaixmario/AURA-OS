@@ -49,6 +49,7 @@ def main():
         os.path.join(KERNEL_DIR, "apps", "app_term.c"),
         os.path.join(KERNEL_DIR, "apps", "app_calc.c"),
         os.path.join(KERNEL_DIR, "apps", "app_paint.c"),
+        os.path.join(KERNEL_DIR, "apps", "app_notes.c"),
         os.path.join(KERNEL_DIR, "apps", "app_sysinfo.c"),
         os.path.join(KERNEL_DIR, "kernel.c")
     ]

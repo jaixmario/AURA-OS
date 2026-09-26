@@ -17,6 +17,8 @@ typedef struct window {
 
     void (*draw_client)(struct window *win);
     void (*on_click)(struct window *win, int cx, int cy, int btn);
+    void (*on_drag)(struct window *win, int cx, int cy, int btn);
+    void (*on_release)(struct window *win, int cx, int cy, int btn);
     void (*on_key)(struct window *win, char key);
 
     void *user_data;

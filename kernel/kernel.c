@@ -103,7 +103,7 @@ static void draw_start_menu(void) {
     int h = gfx_get_height();
     int menu_x = 8;
     int menu_w = 210;
-    int menu_h = 220;
+    int menu_h = 250;
     int menu_y = h - 48 - menu_h - 8;
 
     // Drop shadow
@@ -118,27 +118,28 @@ static void draw_start_menu(void) {
     gfx_draw_string(menu_x + 16, menu_y + 10, "Applications", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Menu items
-    const char *items[4] = {
+    const char *items[5] = {
         "> 1. Terminal",
         "> 2. Calculator",
         "> 3. Canvas Paint",
-        "> 4. System Info"
+        "> 4. Notes Editor",
+        "> 5. System Info"
     };
 
     int mx = mouse_get_x();
     int my = mouse_get_y();
 
-    for (int i = 0; i < 4; i++) {
-        int item_y = menu_y + 44 + (i * 40);
+    for (int i = 0; i < 5; i++) {
+        int item_y = menu_y + 42 + (i * 38);
         int is_hover = (mx >= menu_x + 6 && mx <= menu_x + menu_w - 6 &&
-                        my >= item_y && my <= item_y + 34);
+                        my >= item_y && my <= item_y + 32);
 
         if (is_hover) {
-            gfx_fillrect(menu_x + 6, item_y, menu_w - 12, 34, RGB(49, 50, 68));
-            gfx_drawrect(menu_x + 6, item_y, menu_w - 12, 34, COLOR_ACCENT);
+            gfx_fillrect(menu_x + 6, item_y, menu_w - 12, 32, RGB(49, 50, 68));
+            gfx_drawrect(menu_x + 6, item_y, menu_w - 12, 32, COLOR_ACCENT);
         }
 
-        gfx_draw_string(menu_x + 16, item_y + 10, items[i], is_hover ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(menu_x + 16, item_y + 8, items[i], is_hover ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
     }
 }
 
@@ -156,17 +157,18 @@ static void handle_desktop_click(int mx, int my) {
     if (start_menu_open) {
         int menu_x = 8;
         int menu_w = 210;
-        int menu_h = 220;
+        int menu_h = 250;
         int menu_y = h - 48 - menu_h - 8;
 
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y && my <= menu_y + menu_h) {
-            for (int i = 0; i < 4; i++) {
-                int item_y = menu_y + 44 + (i * 40);
-                if (my >= item_y && my <= item_y + 34) {
+            for (int i = 0; i < 5; i++) {
+                int item_y = menu_y + 42 + (i * 38);
+                if (my >= item_y && my <= item_y + 32) {
                     if (i == 0) app_term_launch();
                     else if (i == 1) app_calc_launch();
                     else if (i == 2) app_paint_launch();
-                    else if (i == 3) app_sysinfo_launch();
+                    else if (i == 3) app_notes_launch();
+                    else if (i == 4) app_sysinfo_launch();
                     start_menu_open = 0;
                     return;
                 }
@@ -228,8 +230,10 @@ void kernel_main(boot_info_t *bi) {
 
     // Launch default initial windows
     app_sysinfo_launch();
-    app_term_launch();
+    app_notes_launch();
     app_calc_launch();
+    app_term_launch();
+    app_paint_launch();
 
     // Main Desktop Event & Render Loop
     while (1) {

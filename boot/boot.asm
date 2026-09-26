@@ -189,7 +189,7 @@ pm_start:
     mov ax, 0x10
     mov ds, ax
     mov ss, ax
-    mov esp, 0x90000
+    mov esp, 0x1FFFF0
     jmp 0x10000
 
 dap:

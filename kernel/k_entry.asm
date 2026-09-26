@@ -14,7 +14,7 @@ _start:
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    mov esp, 0x90000
+    mov esp, 0x1FFFF0
 
     push 0x7000 ; pointer to boot_info_t
     call kernel_main

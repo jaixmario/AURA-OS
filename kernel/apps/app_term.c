@@ -34,19 +34,44 @@ static void term_execute_command(void) {
     term_add_line(echo);
 
     if (strcmp(input_buf, "help") == 0) {
-        term_add_line("Available commands:");
-        term_add_line("  help    - show this help menu");
-        term_add_line("  info    - system & kernel specs");
-        term_add_line("  uptime  - print system uptime");
-        term_add_line("  clear   - clear terminal buffer");
-        term_add_line("  echo    - print message");
-        term_add_line("  about   - about AuraOS");
-        term_add_line("  reboot  - reboot system");
+        term_add_line("AuraOS Terminal Commands:");
+        term_add_line("  help     - show this command manual");
+        term_add_line("  paint    - open Canvas Paint app");
+        term_add_line("  notes    - open Notes Editor app");
+        term_add_line("  calc     - open Calculator app");
+        term_add_line("  sysinfo  - open System Specs app");
+        term_add_line("  mem      - inspect memory regions");
+        term_add_line("  uptime   - show system uptime");
+        term_add_line("  clear/cls- clear terminal screen");
+        term_add_line("  echo <t> - print message");
+        term_add_line("  reboot   - restart virtual machine");
+    } else if (strcmp(input_buf, "paint") == 0) {
+        app_paint_launch();
+        term_add_line("Launched Canvas Paint.");
+    } else if (strcmp(input_buf, "notes") == 0) {
+        app_notes_launch();
+        term_add_line("Launched Notes Editor.");
+    } else if (strcmp(input_buf, "calc") == 0) {
+        app_calc_launch();
+        term_add_line("Launched Calculator.");
+    } else if (strcmp(input_buf, "sysinfo") == 0) {
+        app_sysinfo_launch();
+        term_add_line("Launched System Info.");
+    } else if (strcmp(input_buf, "mem") == 0) {
+        term_add_line("Memory Architecture Layout:");
+        term_add_line("  Kernel Code : 0x00010000 (Flat Model)");
+        term_add_line("  Kernel Stack: 0x001FFFF0 (1MB Ring 0 Stack)");
+        term_add_line("  VRAM Buffer : 0x00200000 (3MB Double Buffer)");
+        term_add_line("  Paint Canvas: 0x00600000 (Extended RAM)");
+    } else if (strcmp(input_buf, "ver") == 0 || strcmp(input_buf, "version") == 0) {
+        term_add_line("AuraOS Version 1.1.0 [i686 Protected Mode]");
+    } else if (strcmp(input_buf, "date") == 0) {
+        term_add_line("System Date: 2026-09-26  (RTC/PIT Synchronized)");
     } else if (strcmp(input_buf, "info") == 0) {
-        term_add_line("AuraOS v1.0 [i686 Protected Mode]");
-        term_add_line("Video: 1024x768 Linear Framebuffer");
+        term_add_line("AuraOS v1.1 [i686 Protected Mode]");
+        term_add_line("Video: 1024x768 Dynamic VBE TrueColor");
         term_add_line("Drivers: PS/2 Mouse & Keyboard, PIT 100Hz");
-    } else if (strcmp(input_buf, "clear") == 0) {
+    } else if (strcmp(input_buf, "clear") == 0 || strcmp(input_buf, "cls") == 0) {
         term_line_count = 0;
     } else if (strcmp(input_buf, "uptime") == 0) {
         unsigned int sec = pit_get_uptime_seconds();

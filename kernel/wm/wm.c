@@ -7,12 +7,16 @@ static int z_order[MAX_WINDOWS];
 static int window_count = 0;
 
 static window_t *dragging_win = 0;
+static window_t *client_drag_win = 0;
 static int drag_off_x = 0;
 static int drag_off_y = 0;
+static int prev_mouse_btn = 0;
 
 void wm_init(void) {
     window_count = 0;
     dragging_win = 0;
+    client_drag_win = 0;
+    prev_mouse_btn = 0;
     for (int i = 0; i < MAX_WINDOWS; i++) {
         windows[i].id = i;
         windows[i].is_open = 0;
@@ -51,6 +55,8 @@ window_t *wm_create_window(const char *title, int x, int y, int w, int h, unsign
     win->bg_color = bg_color;
     win->draw_client = 0;
     win->on_click = 0;
+    win->on_drag = 0;
+    win->on_release = 0;
     win->on_key = 0;
     win->user_data = 0;
 
@@ -64,6 +70,7 @@ void wm_close_window(window_t *win) {
     win->is_open = 0;
     window_count--;
     if (dragging_win == win) dragging_win = 0;
+    if (client_drag_win == win) client_drag_win = 0;
 }
 
 void wm_focus_window(window_t *win) {
@@ -146,7 +153,18 @@ window_t *wm_get_window_at_index(int idx) {
 }
 
 void wm_handle_mouse(int mx, int my, int btn_left, int left_clicked) {
-    // If dragging a window
+    // 1. Mouse release event
+    if (!btn_left && prev_mouse_btn) {
+        if (client_drag_win) {
+            if (client_drag_win->is_open && !client_drag_win->is_minimized && client_drag_win->on_release) {
+                client_drag_win->on_release(client_drag_win, mx - client_drag_win->x, my - (client_drag_win->y + TITLEBAR_HEIGHT), 0);
+            }
+            client_drag_win = 0;
+        }
+        dragging_win = 0;
+    }
+
+    // 2. Window titlebar dragging
     if (dragging_win) {
         if (!btn_left) {
             dragging_win = 0;
@@ -158,61 +176,82 @@ void wm_handle_mouse(int mx, int my, int btn_left, int left_clicked) {
             if (dragging_win->y > gfx_get_height() - 48 - TITLEBAR_HEIGHT) {
                 dragging_win->y = gfx_get_height() - 48 - TITLEBAR_HEIGHT;
             }
+            prev_mouse_btn = btn_left;
             return;
         }
     }
 
-    if (!left_clicked) return;
+    // 3. Client area continuous drag / hold
+    if (btn_left && !left_clicked && client_drag_win) {
+        if (client_drag_win->is_open && !client_drag_win->is_minimized && client_drag_win->on_drag) {
+            client_drag_win->on_drag(client_drag_win, mx - client_drag_win->x, my - (client_drag_win->y + TITLEBAR_HEIGHT), 0);
+        }
+        prev_mouse_btn = btn_left;
+        return;
+    }
 
-    // Check windows from top of z-order down
-    for (int i = MAX_WINDOWS - 1; i >= 0; i--) {
-        int id = z_order[i];
-        window_t *win = &windows[id];
-        if (!win->is_open || win->is_minimized) continue;
+    // 4. Initial left click event
+    if (left_clicked) {
+        client_drag_win = 0;
 
-        if (mx >= win->x && mx < win->x + win->width &&
-            my >= win->y && my < win->y + win->height) {
+        // Check windows from top of z-order down
+        for (int i = MAX_WINDOWS - 1; i >= 0; i--) {
+            int id = z_order[i];
+            window_t *win = &windows[id];
+            if (!win->is_open || win->is_minimized) continue;
 
-            wm_focus_window(win);
+            if (mx >= win->x && mx < win->x + win->width &&
+                my >= win->y && my < win->y + win->height) {
 
-            // Check if in title bar
-            if (my < win->y + TITLEBAR_HEIGHT) {
-                // Close button: cx = win->x + 16, cy = win->y + 16, r = 6
-                int dx = mx - (win->x + 16);
-                int dy = my - (win->y + 16);
-                if (dx * dx + dy * dy <= 49) {
-                    wm_close_window(win);
+                wm_focus_window(win);
+
+                // Check if in title bar
+                if (my < win->y + TITLEBAR_HEIGHT) {
+                    // Close button: cx = win->x + 16, cy = win->y + 16, r = 6
+                    int dx = mx - (win->x + 16);
+                    int dy = my - (win->y + 16);
+                    if (dx * dx + dy * dy <= 49) {
+                        wm_close_window(win);
+                        prev_mouse_btn = btn_left;
+                        return;
+                    }
+                    // Minimize button: cx = win->x + 34
+                    dx = mx - (win->x + 34);
+                    if (dx * dx + dy * dy <= 49) {
+                        wm_minimize_window(win);
+                        prev_mouse_btn = btn_left;
+                        return;
+                    }
+                    // Maximize button: cx = win->x + 52
+                    dx = mx - (win->x + 52);
+                    if (dx * dx + dy * dy <= 49) {
+                        wm_maximize_window(win);
+                        prev_mouse_btn = btn_left;
+                        return;
+                    }
+
+                    // Otherwise drag window
+                    if (!win->is_maximized) {
+                        dragging_win = win;
+                        drag_off_x = mx - win->x;
+                        drag_off_y = my - win->y;
+                    }
+                    prev_mouse_btn = btn_left;
+                    return;
+                } else {
+                    // In client area
+                    client_drag_win = win;
+                    if (win->on_click) {
+                        win->on_click(win, mx - win->x, my - (win->y + TITLEBAR_HEIGHT), 0);
+                    }
+                    prev_mouse_btn = btn_left;
                     return;
                 }
-                // Minimize button: cx = win->x + 34
-                dx = mx - (win->x + 34);
-                if (dx * dx + dy * dy <= 49) {
-                    wm_minimize_window(win);
-                    return;
-                }
-                // Maximize button: cx = win->x + 52
-                dx = mx - (win->x + 52);
-                if (dx * dx + dy * dy <= 49) {
-                    wm_maximize_window(win);
-                    return;
-                }
-
-                // Otherwise drag window
-                if (!win->is_maximized) {
-                    dragging_win = win;
-                    drag_off_x = mx - win->x;
-                    drag_off_y = my - win->y;
-                }
-                return;
-            } else {
-                // In client area
-                if (win->on_click) {
-                    win->on_click(win, mx - win->x, my - (win->y + TITLEBAR_HEIGHT), 0);
-                }
-                return;
             }
         }
     }
+
+    prev_mouse_btn = btn_left;
 }
 
 void wm_handle_key(char key) {

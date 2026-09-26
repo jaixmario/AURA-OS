@@ -1,6 +1,5 @@
 # Intermediate build objects
-bin/*.o
-bin/*.bin
+bin/
 __pycache__/
 *.pyc
 

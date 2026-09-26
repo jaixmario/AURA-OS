@@ -74,7 +74,7 @@ flowchart TD
     DRIVERS["Hardware Drivers<br/>• PS/2 Mouse (IRQ12)<br/>• PS/2 Keyboard (IRQ1)<br/>• PIT 100Hz Timer (IRQ0)"]
     GFX["Graphics Engine<br/>• Double-Buffered VRAM<br/>• 2D Primitives & Gradients<br/>• 8x16 Bitmap Typography"]
     WM["Window Manager<br/>• Draggable Windows<br/>• Z-Order Stacking<br/>• Close/Min/Max Controls"]
-    APPS["Desktop & Apps<br/>• Terminal Shell<br/>• Calculator<br/>• Canvas Paint<br/>• System Info"]
+    APPS["Desktop & Apps<br/>• Terminal Shell (12+ commands)<br/>• Calculator (4-function GUI)<br/>• Canvas Paint (16 Colors & Tools)<br/>• Notes Editor (Text Editor)<br/>• System Info"]
 
     MBR --> KERNEL
     KERNEL --> DRIVERS
@@ -88,14 +88,14 @@ flowchart TD
 - **Size**: Exactly 512 bytes (fits in MBR sector 0).
 - **Disk I/O**: Reads 128 sectors (64 KB) of kernel image into RAM at `0x10000` using BIOS INT 0x13 Extension (LBA Packet).
 - **Display Setup**: Dynamically queries VBE 2.0+ controller info (`AX=4F00h`) and scans available video modes for Linear Frame Buffer TrueColor modes (1024x768 32-bit / 24-bit with fallbacks for VMware SVGA, VirtualBox, and QEMU).
-- **Hardware Transition**: Enables Fast A20 gate, sets up Global Descriptor Table (GDT), enables protected mode (CR0 PE bit), and executes far jump to 32-bit kernel.
+- **Hardware Transition**: Enables Fast A20 gate, sets up Global Descriptor Table (GDT), enables protected mode (CR0 PE bit), sets stack to safe `0x1FFFF0` (1MB stack space), and executes far jump to 32-bit kernel.
 
 ### 2. Kernel Core & Drivers (`kernel/arch/`)
 - **IDT (Interrupt Descriptor Table)**: 256 gates with CPU exception handlers (0..31) and hardware IRQs (32..47).
 - **8259 PIC**: Remaps Master PIC to INT 0x20-0x27 and Slave PIC to INT 0x28-0x2F.
 - **8254 PIT Timer**: Configured to 100 Hz (10ms resolution). Provides live uptime counter and digital clock.
 - **PS/2 Keyboard**: Decodes scancodes, tracks modifier keys (Shift, Caps Lock), and buffers keystrokes for GUI apps.
-- **PS/2 Mouse**: Decodes 3-byte packets on IRQ12. Clamps coordinates to `1024x768`, tracks button clicks and drag events.
+- **PS/2 Mouse**: Decodes 3-byte packets on IRQ12. Clamps coordinates to `1024x768`, tracks button clicks, dragging, and release events.
 
 ### 3. Graphics & Window Manager (`kernel/gfx/`, `kernel/wm/`)
 - **Double Buffering**: 3.2 MB backbuffer in physical RAM at `0x200000`. Guarantees 100% flicker-free rendering.
@@ -103,13 +103,15 @@ flowchart TD
 - **Window Management**:
   - Overlapping floating windows with z-order focus.
   - Smooth mouse title bar grabbing & dragging.
+  - Full client drag and release callbacks (`on_drag`, `on_release`) for interactive apps.
   - Window control buttons: Close (red), Minimize (yellow), Maximize/Restore (green).
   - Active window header accent highlighting.
 
 ### 4. Interactive Applications (`kernel/apps/`)
-- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `help`, `info`, `uptime`, `clear`, `echo`, `reboot`, and `about`.
+- 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 6MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
+- 📝 **Notes Editor**: Multiline text editor with line numbers gutter, live keyboard typing, backspace deletion, and document statistics (lines, characters, encoding).
+- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `help`, `paint`, `notes`, `calc`, `sysinfo`, `mem`, `ver`, `date`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
 - 🧮 **Calculator**: Functional 16-button clickable desktop calculator supporting addition, subtraction, multiplication, and division.
-- 🎨 **Canvas Paint**: Freehand drawing app with 8-color palette and clear canvas button.
 - ℹ️ **System Info**: Displays OS architecture, display specs, live memory allocation, uptime, and animated CPU activity bar.
 
 ---
