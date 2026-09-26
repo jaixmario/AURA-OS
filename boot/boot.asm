@@ -139,5 +139,26 @@ gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
-times 510 - ($ - $$) db 0
+; Pad exactly to offset 446 (0x1BE) for standard MBR Partition Table
+times 446 - ($ - $$) db 0
+
+; MBR Partition Table Entry 1 (offset 446 / 0x1BE)
+partition1:
+    db 0x80         ; 0x80 = Active / Bootable Partition
+    db 0x01         ; Starting Head = 1
+    db 0x01         ; Starting Sector = 1
+    db 0x00         ; Starting Cylinder = 0
+    db 0x06         ; Partition Type = FAT16 (or 0x0C for FAT32 LBA)
+    db 0x0F         ; Ending Head = 15
+    db 0x20         ; Ending Sector = 32
+    db 0x27         ; Ending Cylinder = 39
+    dd 2048         ; Starting LBA sector = 2048 (1 MB offset)
+    dd 18432        ; Partition size = 18432 sectors (9 MB)
+
+; MBR Partition Table Entries 2, 3, 4 (all empty)
+partition2: times 16 db 0
+partition3: times 16 db 0
+partition4: times 16 db 0
+
+; MBR Boot Signature at offset 510
 dw 0xAA55

@@ -85,32 +85,66 @@ def main():
     ] + c_objects + ["-o", kernel_bin]
     run_cmd(link_cmd, "Linking Kernel Binary")
 
-    # 5. Package Disk Image (Raw HDD)
+    # 5. Package Partitioned Disk Image (10 MB MBR Hard Disk)
     disk_img = os.path.join(PROJECT_ROOT, "auraos.img")
-    print(f"[*] Creating Disk Image: {disk_img}...")
-    with open(boot_bin, "rb") as fb, open(kernel_bin, "rb") as fk, open(disk_img, "wb") as fout:
-        boot_data = fb.read()
-        kernel_data = fk.read()
-        fout.write(boot_data)
-        fout.write(kernel_data)
-        cur_pos = fout.tell()
-        # Pad to 10MB
-        target_size = 10 * 1024 * 1024
-        if cur_pos < target_size:
-            fout.write(b'\x00' * (target_size - cur_pos))
+    print(f"[*] Creating Partitioned Disk Image: {disk_img}...")
+    from format_fat import create_fat16_partition
 
-    # 6. Package VMware / Universal Bootable ISO (El Torito CD-ROM)
+    # Read bootloader and kernel
+    with open(boot_bin, "rb") as fb, open(kernel_bin, "rb") as fk:
+        boot_data = fb.read() # 512 bytes (MBR with partition table)
+        kernel_data = fk.read() # 28 KB
+
+    readme_data = b"""==================================================
+           AuraOS Graphical Operating System
+==================================================
+Version     : 1.0.0 (32-bit x86 Protected Mode)
+Graphics    : VESA VBE 2.0+ (1024x768 TrueColor)
+Architecture: Bare-metal custom microkernel
+Features    : Floating Window Manager, Terminal,
+              Calculator, Paint Canvas, System Info.
+
+Installed on: Primary MBR Hard Disk (FAT16 Partition)
+==================================================
+"""
+
+    # Disk Layout:
+    # - Sector 0: MBR (512 bytes)
+    # - Sectors 1..64: Kernel raw image in MBR reserved gap (32 KB)
+    # - Sectors 65..2047: Padding up to 1 MB boundary
+    # - Sector 2048 onwards: Formatted FAT16 Partition (18,432 sectors = 9 MB)
+    # Total disk size: 20480 sectors = exactly 10,485,760 bytes (10 MB)
+    TOTAL_DISK_SECTORS = 20480
+    PARTITION_START_SECTOR = 2048
+    PARTITION_SECTORS = TOTAL_DISK_SECTORS - PARTITION_START_SECTOR # 18432
+
+    fat_partition = create_fat16_partition(kernel_data, readme_data, PARTITION_SECTORS)
+
+    disk = bytearray(TOTAL_DISK_SECTORS * 512)
+    # Sector 0: MBR
+    disk[0:512] = boot_data
+    # Sectors 1..: Kernel in MBR gap for INT 13h LBA loading
+    disk[512:512 + len(kernel_data)] = kernel_data
+    # Sector 2048 onwards: FAT16 partition
+    part_byte_offset = PARTITION_START_SECTOR * 512
+    disk[part_byte_offset:part_byte_offset + len(fat_partition)] = fat_partition
+
+    with open(disk_img, "wb") as fout:
+        fout.write(disk)
+
+    # 6. Package VMware / Universal Bootable ISO (El Torito CD-ROM with Joliet & Rock Ridge)
     iso_path = os.path.join(PROJECT_ROOT, "auraos.iso")
     print(f"[*] Creating Bootable ISO for VMware / QEMU: {iso_path}...")
     try:
-        from make_iso import make_no_emulation_iso
-        make_no_emulation_iso(boot_bin, kernel_bin, iso_path)
+        from make_iso import make_bootable_iso
+        make_bootable_iso(boot_bin, kernel_bin, iso_path)
     except Exception as e:
         print("[!] ISO creation warning:", e)
 
-    # 7. Generate VMware Virtual Disk Descriptor (.vmdk)
+    # 7. Generate VMware Virtual Disk Descriptor (.vmdk) with exact matching geometry
     vmdk_path = os.path.join(PROJECT_ROOT, "auraos.vmdk")
     print(f"[*] Creating VMware VMDK descriptor: {vmdk_path}...")
+    # Exact geometry: 40 cylinders * 16 heads * 32 sectors = 20,480 sectors = 10 MB
     vmdk_content = """# Disk DescriptorFile
 version=1
 encoding="UTF-8"
@@ -126,9 +160,9 @@ RW 20480 FLAT "auraos.img" 0
 #DDB
 
 ddb.adapterType = "ide"
-ddb.geometry.sectors = "63"
+ddb.geometry.cylinders = "40"
 ddb.geometry.heads = "16"
-ddb.geometry.cylinders = "20"
+ddb.geometry.sectors = "32"
 ddb.virtualHWVersion = "4"
 """
     with open(vmdk_path, "w", encoding="ascii") as f:
@@ -137,9 +171,9 @@ ddb.virtualHWVersion = "4"
     print(f"\n[+] BUILD COMPLETE!")
     print(f"    - Bootloader: {len(boot_data)} bytes")
     print(f"    - Kernel:     {len(kernel_data)} bytes")
-    print(f"    - Raw Disk:   {os.path.getsize(disk_img)} bytes ({disk_img})")
+    print(f"    - Hard Disk:  {os.path.getsize(disk_img)} bytes ({disk_img}) [MBR + FAT16]")
     if os.path.exists(iso_path):
-        print(f"    - CD-ROM ISO: {os.path.getsize(iso_path)} bytes ({iso_path})")
+        print(f"    - CD-ROM ISO: {os.path.getsize(iso_path)} bytes ({iso_path}) [El Torito + Joliet]")
     print(f"    - VMware VMDK:{vmdk_path}")
 
 if __name__ == "__main__":

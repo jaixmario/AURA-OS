@@ -13,7 +13,7 @@ RW 20480 FLAT "auraos.img" 0
 #DDB
 
 ddb.adapterType = "ide"
-ddb.geometry.sectors = "63"
+ddb.geometry.cylinders = "40"
 ddb.geometry.heads = "16"
-ddb.geometry.cylinders = "20"
+ddb.geometry.sectors = "32"
 ddb.virtualHWVersion = "4"
