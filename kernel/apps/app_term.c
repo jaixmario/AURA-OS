@@ -27,6 +27,8 @@ static void term_add_line(const char *text) {
     }
 }
 
+static char term_cwd[32] = "Documents";
+
 static void term_execute_command(void) {
     if (input_len == 0) return;
 
@@ -39,10 +41,14 @@ static void term_execute_command(void) {
         term_add_line("AuraOS Terminal Commands:");
         term_add_line("  files    - open File Explorer GUI");
         term_add_line("  edit <f> - edit file in Notes Editor");
-        term_add_line("  ls / dir - list files in storage");
+        term_add_line("  cd <path>- change current directory path");
+        term_add_line("  pwd      - print current directory path");
+        term_add_line("  ls / dir - list files in current directory");
         term_add_line("  cat <f>  - display file contents");
         term_add_line("  touch <f>- create empty file");
         term_add_line("  rm <f>   - delete file");
+        term_add_line("  mv <f> <p>- move file to destination path");
+        term_add_line("  disk     - inspect physical ATA hard drive");
         term_add_line("  paint    - open Canvas Paint app");
         term_add_line("  notes    - open Notes Editor app");
         term_add_line("  calc     - open Calculator app");
@@ -55,24 +61,77 @@ static void term_execute_command(void) {
         term_add_line("  clear/cls- clear terminal screen");
         term_add_line("  echo <t> - print message");
         term_add_line("  reboot   - restart virtual machine");
+    } else if (strncmp(input_buf, "cd ", 3) == 0) {
+        const char *new_p = input_buf + 3;
+        while (*new_p == ' ') new_p++;
+        if ((new_p[0] == 'C' || new_p[0] == 'c') && new_p[1] == ':' && (new_p[2] == '\\' || new_p[2] == '/')) {
+            new_p += 3;
+        } else if (new_p[0] == '\\' || new_p[0] == '/') {
+            new_p += 1;
+        }
+        if (new_p[0] == '\0' || strcmp(new_p, "..") == 0) {
+            strcpy(term_cwd, "Storage");
+        } else {
+            strncpy(term_cwd, new_p, sizeof(term_cwd) - 1);
+            term_cwd[sizeof(term_cwd) - 1] = '\0';
+        }
+        char msg[48];
+        snprintf(msg, sizeof(msg), "Changed path to C:\\%s", term_cwd);
+        term_add_line(msg);
+    } else if (strcmp(input_buf, "pwd") == 0) {
+        char msg[48];
+        snprintf(msg, sizeof(msg), "C:\\%s", term_cwd);
+        term_add_line(msg);
+    } else if (strcmp(input_buf, "disk") == 0) {
+        char cap[32];
+        vfs_get_disk_size_string(cap, sizeof(cap));
+        char msg1[64], msg2[64];
+        snprintf(msg1, sizeof(msg1), "Disk: %s (%s)", vfs_get_disk_model(), cap);
+        snprintf(msg2, sizeof(msg2), "Total Sectors: %u (ATA PIO Active)", vfs_get_disk_sectors());
+        term_add_line(msg1);
+        term_add_line(msg2);
+    } else if (strncmp(input_buf, "mv ", 3) == 0) {
+        char fname[32] = {0}, fdest[32] = {0};
+        const char *args = input_buf + 3;
+        while (*args == ' ') args++;
+        int ai = 0;
+        while (*args && *args != ' ' && ai < 31) fname[ai++] = *args++;
+        while (*args == ' ') args++;
+        int di = 0;
+        while (*args && *args != ' ' && di < 31) fdest[di++] = *args++;
+        if (fname[0] && fdest[0]) {
+            int res = vfs_move_file(fname, fdest);
+            if (res == 0) {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Moved %s to C:\\%s", fname, fdest);
+                term_add_line(msg);
+            } else {
+                term_add_line("Error: File not found.");
+            }
+        } else {
+            term_add_line("Usage: mv <filename> <destination_folder>");
+        }
     } else if (strcmp(input_buf, "files") == 0 || strcmp(input_buf, "explorer") == 0) {
         app_files_launch();
         term_add_line("Launched File Explorer.");
     } else if (strcmp(input_buf, "ls") == 0 || strcmp(input_buf, "dir") == 0) {
-        term_add_line("Directory of C:\\AuraOS (ATA Hard Disk):");
+        char head[48];
+        snprintf(head, sizeof(head), "Directory of C:\\%s:", term_cwd);
+        term_add_line(head);
         int cnt = vfs_get_count();
         for (int i = 0; i < cnt; i++) {
             vfs_file_t *f = vfs_get_at(i);
-            char line[64];
-            snprintf(line, sizeof(line), "  %-12s [%-9s] %5u B  %04u-%02u-%02u",
-                     f->name, f->folder, f->size, f->created_year, f->created_month, f->created_day);
-            term_add_line(line);
+            if (strcmp(term_cwd, "Storage") == 0 || strcmp(term_cwd, "All") == 0 || strcmp(f->folder, term_cwd) == 0) {
+                char line[64];
+                snprintf(line, sizeof(line), "  %-12s [%-9s] %5u B  %04u-%02u-%02u",
+                         f->name, f->folder, f->size, f->created_year, f->created_month, f->created_day);
+                term_add_line(line);
+            }
         }
     } else if (strncmp(input_buf, "cat ", 4) == 0) {
         const char *fname = input_buf + 4;
         vfs_file_t *f = vfs_find(fname);
         if (f) {
-            // Print first line or snippet
             char snippet[60];
             int s_i = 0;
             for (int k = 0; k < (int)f->size && k < 58; k++) {
@@ -87,7 +146,7 @@ static void term_execute_command(void) {
         }
     } else if (strncmp(input_buf, "touch ", 6) == 0) {
         const char *fname = input_buf + 6;
-        if (vfs_create_file(fname, "Documents", "", 0, FS_ATTR_USER) == 0) {
+        if (vfs_create_file(fname, term_cwd, "", 0, FS_ATTR_USER) == 0) {
             term_add_line("File created on hard disk.");
         } else {
             term_add_line("Error: Cannot create file.");
@@ -183,12 +242,15 @@ static void term_draw(window_t *win) {
 
     // Draw active prompt
     int prompt_y = start_y + (term_line_count * 18);
-    gfx_draw_string(x, prompt_y, "aura@kernel:~$ ", COLOR_GREEN, COLOR_TRANSPARENT);
-    gfx_draw_string(x + 120, prompt_y, input_buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    char prompt_str[64];
+    snprintf(prompt_str, sizeof(prompt_str), "aura@C:\\%s> ", term_cwd);
+    int prompt_len = strlen(prompt_str);
+    gfx_draw_string(x, prompt_y, prompt_str, COLOR_GREEN, COLOR_TRANSPARENT);
+    gfx_draw_string(x + (prompt_len * 8), prompt_y, input_buf, COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Blinking cursor
     if ((pit_get_ticks() / 30) % 2 == 0) {
-        int cursor_x = x + 120 + (input_len * 8);
+        int cursor_x = x + (prompt_len * 8) + (input_len * 8);
         gfx_fillrect(cursor_x, prompt_y, 8, 16, COLOR_ACCENT);
     }
 }

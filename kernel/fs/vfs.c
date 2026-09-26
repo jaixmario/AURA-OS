@@ -6,9 +6,9 @@
 #define ATA_FS_MAGIC         0x41555241 // 'AURA'
 #define ATA_FS_VERSION       1
 #define ATA_FS_SUPER_LBA     512
-#define ATA_FS_SUPER_SECTORS 4
+#define ATA_FS_SUPER_SECTORS 8
 #define ATA_SECTORS_PER_FILE 4
-#define ATA_FS_DATA_LBA      516
+#define ATA_FS_DATA_LBA      520
 
 typedef struct {
     char name[VFS_MAX_FILENAME];
@@ -22,15 +22,19 @@ typedef struct {
     unsigned int sector_count;
 } __attribute__((packed)) ata_disk_entry_t;
 
+#define ATA_SUPERBLOCK_SIZE (ATA_FS_SUPER_SECTORS * ATA_SECTOR_SIZE)
+#define ATA_SUPERBLOCK_USED (16 + (VFS_MAX_FILES * sizeof(ata_disk_entry_t)))
+
 typedef struct {
     unsigned int magic;
     unsigned int version;
     unsigned int file_count;
     unsigned int total_capacity;
     ata_disk_entry_t entries[VFS_MAX_FILES];
-    unsigned char padding[2048 - 16 - (VFS_MAX_FILES * sizeof(ata_disk_entry_t))];
+    unsigned char padding[ATA_SUPERBLOCK_SIZE > ATA_SUPERBLOCK_USED ? (ATA_SUPERBLOCK_SIZE - ATA_SUPERBLOCK_USED) : 1];
 } __attribute__((packed)) ata_superblock_t;
 
+static ata_superblock_t disk_sb;
 static vfs_file_t files[VFS_MAX_FILES];
 static int file_count = 0;
 static int disk_backed = 0;
@@ -41,7 +45,7 @@ static const char *default_readme =
     "==================================================\n"
     "Version     : 1.2.0 (32-bit x86 Protected Mode)\n"
     "Graphics    : VESA VBE 2.0+ (1024x768 TrueColor)\n"
-    "Storage     : ATA PIO Hard Disk (LBA Sector 512+)\n"
+    "Storage     : ATA PIO Master Hard Disk\n"
     "Drivers     : CMOS RTC, PS/2 Mouse & Keyboard, PIT\n"
     "Apps        : File Explorer, Terminal, Settings,\n"
     "              Calculator, Paint Canvas, Notes Editor.\n\n"
@@ -53,7 +57,7 @@ static const char *default_cfg =
     "DRIVER=ATA_PIO\n"
     "PRIMARY_BUS=0x1F0\n"
     "LBA_OFFSET=512\n"
-    "MAX_FILES=24\n\n"
+    "MAX_FILES=32\n\n"
     "[DISPLAY]\n"
     "WIDTH=1024\n"
     "HEIGHT=768\n"
@@ -69,7 +73,7 @@ static const char *default_notes =
     "- ATA PIO Hard Disk Storage Driver active\n"
     "- Files are written directly to disk sectors\n"
     "- Save As dialog allows choosing destination folder\n"
-    "- Folders: Documents, Storage, System\n";
+    "- Folders: Documents, Storage, System, Custom\n";
 
 static const char *default_startup =
     "# AuraOS Bootup Script\n"
@@ -95,23 +99,22 @@ static const char *default_hardware =
 int vfs_sync_disk(void) {
     if (!disk_backed) return 0;
 
-    ata_superblock_t sb;
-    memset(&sb, 0, sizeof(sb));
-    sb.magic = ATA_FS_MAGIC;
-    sb.version = ATA_FS_VERSION;
-    sb.file_count = file_count;
-    sb.total_capacity = VFS_MAX_FILES * VFS_MAX_FILESIZE;
+    memset(&disk_sb, 0, sizeof(disk_sb));
+    disk_sb.magic = ATA_FS_MAGIC;
+    disk_sb.version = ATA_FS_VERSION;
+    disk_sb.file_count = file_count;
+    disk_sb.total_capacity = VFS_MAX_FILES * VFS_MAX_FILESIZE;
 
     for (int i = 0; i < file_count; i++) {
-        strncpy(sb.entries[i].name, files[i].name, VFS_MAX_FILENAME - 1);
-        strncpy(sb.entries[i].folder, files[i].folder, VFS_MAX_FOLDER - 1);
-        sb.entries[i].size = files[i].size;
-        sb.entries[i].attr = files[i].attr;
-        sb.entries[i].created_year = files[i].created_year;
-        sb.entries[i].created_month = files[i].created_month;
-        sb.entries[i].created_day = files[i].created_day;
-        sb.entries[i].lba_start = files[i].disk_lba;
-        sb.entries[i].sector_count = ATA_SECTORS_PER_FILE;
+        strncpy(disk_sb.entries[i].name, files[i].name, VFS_MAX_FILENAME - 1);
+        strncpy(disk_sb.entries[i].folder, files[i].folder, VFS_MAX_FOLDER - 1);
+        disk_sb.entries[i].size = files[i].size;
+        disk_sb.entries[i].attr = files[i].attr;
+        disk_sb.entries[i].created_year = files[i].created_year;
+        disk_sb.entries[i].created_month = files[i].created_month;
+        disk_sb.entries[i].created_day = files[i].created_day;
+        disk_sb.entries[i].lba_start = files[i].disk_lba;
+        disk_sb.entries[i].sector_count = ATA_SECTORS_PER_FILE;
 
         // Write file data sectors (4 sectors = 2048 bytes)
         unsigned char sec_buf[ATA_SECTORS_PER_FILE * ATA_SECTOR_SIZE];
@@ -122,8 +125,8 @@ int vfs_sync_disk(void) {
         ata_write_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, sec_buf);
     }
 
-    // Write superblock (4 sectors at LBA 512)
-    ata_write_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &sb);
+    // Write superblock (8 sectors at LBA 512)
+    ata_write_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &disk_sb);
     return 0;
 }
 
@@ -136,7 +139,13 @@ int vfs_create_file(const char *name, const char *folder, const char *content, u
     f->name[VFS_MAX_FILENAME - 1] = '\0';
 
     if (folder && folder[0] != '\0') {
-        strncpy(f->folder, folder, VFS_MAX_FOLDER - 1);
+        const char *clean_folder = folder;
+        if ((clean_folder[0] == 'C' || clean_folder[0] == 'c') && clean_folder[1] == ':' && (clean_folder[2] == '\\' || clean_folder[2] == '/')) {
+            clean_folder += 3;
+        } else if (clean_folder[0] == '\\' || clean_folder[0] == '/') {
+            clean_folder += 1;
+        }
+        strncpy(f->folder, clean_folder, VFS_MAX_FOLDER - 1);
         f->folder[VFS_MAX_FOLDER - 1] = '\0';
     } else {
         strcpy(f->folder, "Documents");
@@ -181,7 +190,6 @@ int vfs_write_file(const char *name, const char *content, unsigned int size) {
     f->data[size] = '\0';
 
     if (disk_backed) {
-        // Write file's sectors directly
         unsigned char sec_buf[ATA_SECTORS_PER_FILE * ATA_SECTOR_SIZE];
         memset(sec_buf, 0, sizeof(sec_buf));
         if (size > 0) {
@@ -196,7 +204,15 @@ int vfs_write_file(const char *name, const char *content, unsigned int size) {
 int vfs_move_file(const char *name, const char *new_folder) {
     vfs_file_t *f = vfs_find(name);
     if (!f || !new_folder) return -1;
-    strncpy(f->folder, new_folder, VFS_MAX_FOLDER - 1);
+
+    const char *clean_folder = new_folder;
+    if ((clean_folder[0] == 'C' || clean_folder[0] == 'c') && clean_folder[1] == ':' && (clean_folder[2] == '\\' || clean_folder[2] == '/')) {
+        clean_folder += 3;
+    } else if (clean_folder[0] == '\\' || clean_folder[0] == '/') {
+        clean_folder += 1;
+    }
+
+    strncpy(f->folder, clean_folder, VFS_MAX_FOLDER - 1);
     f->folder[VFS_MAX_FOLDER - 1] = '\0';
     if (disk_backed) {
         vfs_sync_disk();
@@ -260,6 +276,18 @@ int vfs_is_disk_backed(void) {
     return disk_backed;
 }
 
+void vfs_get_disk_size_string(char *buf, int max_len) {
+    ata_get_capacity_string(buf, max_len);
+}
+
+const char *vfs_get_disk_model(void) {
+    return ata_get_model();
+}
+
+unsigned int vfs_get_disk_sectors(void) {
+    return ata_get_total_sectors();
+}
+
 void vfs_init(void) {
     file_count = 0;
     disk_backed = 0;
@@ -267,30 +295,27 @@ void vfs_init(void) {
     int ata_ok = ata_init();
     if (ata_ok == 0 || ata_is_available()) {
         disk_backed = 1;
-        ata_superblock_t sb;
-        memset(&sb, 0, sizeof(sb));
+        memset(&disk_sb, 0, sizeof(disk_sb));
 
-        int r = ata_read_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &sb);
-        if (r == 0 && sb.magic == ATA_FS_MAGIC && sb.version == ATA_FS_VERSION && sb.file_count > 0 && sb.file_count <= VFS_MAX_FILES) {
-            // Restore file records and data directly from disk!
-            file_count = sb.file_count;
+        int r = ata_read_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &disk_sb);
+        if (r == 0 && disk_sb.magic == ATA_FS_MAGIC && disk_sb.version == ATA_FS_VERSION && disk_sb.file_count > 0 && disk_sb.file_count <= VFS_MAX_FILES) {
+            file_count = disk_sb.file_count;
             for (int i = 0; i < file_count; i++) {
-                strncpy(files[i].name, sb.entries[i].name, VFS_MAX_FILENAME - 1);
+                strncpy(files[i].name, disk_sb.entries[i].name, VFS_MAX_FILENAME - 1);
                 files[i].name[VFS_MAX_FILENAME - 1] = '\0';
 
-                strncpy(files[i].folder, sb.entries[i].folder, VFS_MAX_FOLDER - 1);
+                strncpy(files[i].folder, disk_sb.entries[i].folder, VFS_MAX_FOLDER - 1);
                 files[i].folder[VFS_MAX_FOLDER - 1] = '\0';
 
-                files[i].size = sb.entries[i].size;
+                files[i].size = disk_sb.entries[i].size;
                 if (files[i].size >= VFS_MAX_FILESIZE) files[i].size = VFS_MAX_FILESIZE - 1;
 
-                files[i].attr = sb.entries[i].attr;
-                files[i].created_year = sb.entries[i].created_year;
-                files[i].created_month = sb.entries[i].created_month;
-                files[i].created_day = sb.entries[i].created_day;
-                files[i].disk_lba = sb.entries[i].lba_start;
+                files[i].attr = disk_sb.entries[i].attr;
+                files[i].created_year = disk_sb.entries[i].created_year;
+                files[i].created_month = disk_sb.entries[i].created_month;
+                files[i].created_day = disk_sb.entries[i].created_day;
+                files[i].disk_lba = disk_sb.entries[i].lba_start;
 
-                // Read file data sectors from disk
                 unsigned char sec_buf[ATA_SECTORS_PER_FILE * ATA_SECTOR_SIZE];
                 ata_read_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, sec_buf);
                 memcpy(files[i].data, sec_buf, files[i].size);

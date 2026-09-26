@@ -14,45 +14,33 @@ start:
 
     ; 1. Check if booted from CD-ROM (El Torito preloaded at 0x7E00)
     cmp dword [0x7E00], 0x0010B866
-    jne .read_disk
+    je .kernel_ready
 
-    ; CD-ROM boot: copy 64KB kernel backwards from 0x7E00 to 0x10000
-    ; Backwards copy prevents overlapping destination (0x10000) from corrupting source (0x7E00)
-    mov ax, 0x07E0
-    mov ds, ax
-    mov ax, 0x1000
-    mov es, ax
-    mov si, 0xFFFC
-    mov di, 0xFFFC
-    mov cx, 16384       ; 16384 dwords = 65536 bytes (64 KB)
-    std
-    rep movsd
-    cld
-    xor ax, ax
-    mov ds, ax
-    mov es, ax
-    jmp .kernel_ready
-
-.read_disk:
-    mov si, dap
+    ; Read 2 chunks of 128 sectors (256 sectors = 128 KB) from disk
     mov dl, [boot_drive]
+    mov si, dap
+    mov cx, 2
+.read_loop:
     mov ah, 0x42
     int 0x13
     jc disk_error
+    add word [si + 6], 0x1000  ; Next segment: 0x1000 -> 0x2000
+    add word [si + 8], 128     ; Next LBA sector: 1 -> 129
+    loop .read_loop
 
 .kernel_ready:
     ; 2. Dynamic VBE Mode Detection
-    mov word [0x7010], 0 ; chosen_mode = 0
+    mov word [0x7010], 0
 
     mov ax, 0x4F00
-    mov di, 0x8000
+    mov di, 0x5000
     mov dword [di], 'VBE2' ; Request VBE 2.0+
     int 0x10
     cmp ax, 0x004F
     jne .fallback_start
 
-    mov si, [0x800E]
-    mov ax, [0x8010]
+    mov si, [0x500E]
+    mov ax, [0x5010]
     mov fs, ax
 
 .scan_loop:
@@ -63,59 +51,46 @@ start:
 
     push si
     mov ax, 0x4F01
-    mov di, 0x8200
+    mov di, 0x5200
     int 0x10
     pop si
     cmp ax, 0x004F
     jne .scan_loop
 
     ; ModeAttributes bit 0 (supported) and bit 7 (LFB) must be set
-    mov ax, [0x8200]
+    mov ax, [0x5200]
     and ax, 0x0081
     cmp ax, 0x0081
     jne .scan_loop
 
     ; Check resolution & bpp
-    mov ax, [0x8212] ; width
-    mov dx, [0x8214] ; height
-    mov bl, [0x8219] ; bpp
+    cmp byte [0x5219], 24 ; Bpp must be 24 or 32
+    jb .scan_loop
+    mov ax, [0x5212]     ; Width
+    mov dx, [0x5214]     ; Height
 
-    ; Optimal: 1024x768x32
+    ; Check for 1024x768
     cmp ax, 1024
     jne .check_800
     cmp dx, 768
     jne .check_800
-    cmp bl, 32
-    je .found_optimal
-    cmp bl, 24
-    jne .check_800
     mov [0x7010], cx
-    jmp .scan_loop
+    jmp .scan_done       ; Optimal found, finish immediately!
 
 .check_800:
-    cmp word [0x7010], 0
-    jne .scan_loop
     cmp ax, 800
     jne .scan_loop
     cmp dx, 600
     jne .scan_loop
-    cmp bl, 32
-    je .found_800
-    cmp bl, 24
-    jne .scan_loop
-.found_800:
     mov [0x7010], cx
     jmp .scan_loop
-
-.found_optimal:
-    mov [0x7010], cx
 
 .scan_done:
     mov ax, [0x7010]
     test ax, ax
     jz .fallback_start
     call .set_vbe
-    jnc .mode_set_ok
+    jz .mode_set_ok
 
 .fallback_start:
     mov si, fallback_modes
@@ -126,13 +101,13 @@ start:
     push si
     call .set_vbe
     pop si
-    jnc .mode_set_ok
+    jz .mode_set_ok
     jmp .fallback_loop
 
 .set_vbe:
     mov cx, ax
     mov ax, 0x4F01
-    mov di, 0x8200
+    mov di, 0x5200
     int 0x10
     cmp ax, 0x004F
     jne .fail
@@ -141,24 +116,20 @@ start:
     mov ax, 0x4F02
     int 0x10
     cmp ax, 0x004F
-    jne .fail
-    clc
-    ret
 .fail:
-    stc
     ret
 
 .mode_set_ok:
     ; 3. Populate Boot Info at 0x7000
     mov eax, 0x41555241 ; Magic 'AURA'
     mov [0x7000], eax
-    mov eax, [0x8228]   ; PhysBasePtr
+    mov eax, [0x5228]   ; PhysBasePtr
     mov [0x7004], eax
-    mov eax, [0x8212]   ; Width (ax) & Height (dx)
+    mov eax, [0x5212]   ; Width (ax) & Height (dx)
     mov [0x7008], eax
-    mov ax, [0x8210]    ; Pitch
+    mov ax, [0x5210]    ; Pitch
     mov [0x700C], ax
-    mov al, [0x8219]    ; Bpp
+    mov al, [0x5219]    ; Bpp
     mov [0x700E], al
 
     ; 4. Fast A20 Gate
@@ -176,12 +147,9 @@ start:
 
 disk_error:
     mov al, 'D'
-    jmp show_error
-
+    db 0x3C ; cmp al, <next byte> skips mov al, 'V'
 vbe_error:
     mov al, 'V'
-
-show_error:
     mov ah, 0x4F
     push 0xB800
     pop es
@@ -194,8 +162,20 @@ show_error:
 pm_start:
     mov ax, 0x10
     mov ds, ax
+    mov es, ax
     mov ss, ax
     mov esp, 0x1FFFF0
+
+    ; If CD-ROM boot, copy 128KB kernel backwards from 0x7E00 to 0x10000
+    cmp dword [0x7E00], 0x0010B866
+    jne .jump_kernel
+    mov esi, 0x7E00 + 131072 - 4
+    mov edi, 0x10000 + 131072 - 4
+    mov ecx, 32768
+    std
+    rep movsd
+    cld
+.jump_kernel:
     jmp 0x10000
 
 dap:

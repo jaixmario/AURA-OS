@@ -2,8 +2,8 @@
 #define VFS_H
 
 #define VFS_MAX_FILENAME 32
-#define VFS_MAX_FOLDER   16
-#define VFS_MAX_FILES    24
+#define VFS_MAX_FOLDER   32
+#define VFS_MAX_FILES    32
 #define VFS_MAX_FILESIZE 2048
 
 #define FS_ATTR_READONLY 0x01
@@ -12,7 +12,7 @@
 
 typedef struct {
     char name[VFS_MAX_FILENAME];
-    char folder[VFS_MAX_FOLDER]; // "Documents", "Storage", "System"
+    char folder[VFS_MAX_FOLDER]; // "Documents", "Storage", "System", or custom folder path
     unsigned int size;
     unsigned char attr;
     char data[VFS_MAX_FILESIZE];
@@ -34,5 +34,8 @@ unsigned int vfs_get_total_used(void);
 unsigned int vfs_get_total_capacity(void);
 int  vfs_sync_disk(void);
 int  vfs_is_disk_backed(void);
+void vfs_get_disk_size_string(char *buf, int max_len);
+const char *vfs_get_disk_model(void);
+unsigned int vfs_get_disk_sectors(void);
 
 #endif

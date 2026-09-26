@@ -59,6 +59,55 @@ def ppm_to_bmp(ppm_path, bmp_path):
     print(f"[+] Saved screenshot BMP: {bmp_path} ({width}x{height})")
     return True
 
+import zlib
+
+def bmp_to_png(bmp_path, png_path):
+    with open(bmp_path, 'rb') as f:
+        data = f.read()
+    pixel_offset = struct.unpack('<I', data[10:14])[0]
+    width = struct.unpack('<i', data[18:22])[0]
+    height = struct.unpack('<i', data[22:26])[0]
+    row_bytes = width * 3
+    pad = (4 - (row_bytes % 4)) % 4
+    
+    raw_scanlines = bytearray()
+    for y in range(height):
+        bmp_y = height - 1 - y
+        row_start = pixel_offset + bmp_y * (row_bytes + pad)
+        row = data[row_start : row_start + row_bytes]
+        raw_scanlines.append(0)
+        for x in range(width):
+            b = row[x*3]
+            g = row[x*3+1]
+            r = row[x*3+2]
+            raw_scanlines.extend((r, g, b))
+            
+    png = bytearray(b'\x89PNG\r\n\x1a\n')
+    ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+    ihdr_crc = zlib.crc32(b'IHDR' + ihdr_data)
+    png.extend(struct.pack('>I', len(ihdr_data)))
+    png.extend(b'IHDR')
+    png.extend(ihdr_data)
+    png.extend(struct.pack('>I', ihdr_crc))
+    
+    compressed = zlib.compress(bytes(raw_scanlines), 9)
+    idat_crc = zlib.crc32(b'IDAT' + compressed)
+    png.extend(struct.pack('>I', len(compressed)))
+    png.extend(b'IDAT')
+    png.extend(compressed)
+    png.extend(struct.pack('>I', idat_crc))
+    
+    iend_crc = zlib.crc32(b'IEND')
+    png.extend(struct.pack('>I', 0))
+    png.extend(b'IEND')
+    png.extend(struct.pack('>I', iend_crc))
+    
+    with open(png_path, 'wb') as f:
+        f.write(png)
+    print(f"[+] Saved screenshot PNG: {png_path} ({width}x{height})")
+    return True
+
+
 def main():
     print("[*] Launching QEMU to capture screenshot of AuraOS...")
     port = 5590
@@ -93,6 +142,8 @@ def main():
 
     if os.path.exists(PPM_PATH):
         ppm_to_bmp(PPM_PATH, BMP_PATH)
+        png_path = os.path.join(PROJECT_ROOT, "screenshot.png")
+        bmp_to_png(BMP_PATH, png_path)
         print("[+] SUCCESS: AuraOS booted and screenshot captured!")
     else:
         print("[!] Error: No screendump produced!")

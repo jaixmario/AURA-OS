@@ -1,7 +1,12 @@
 #include "ata.h"
 #include "io.h"
+#include "../libc/string.h"
 
 static int ata_drive_present = 0;
+static unsigned short ata_identify_data[256];
+static unsigned int ata_total_sectors = 0;
+static unsigned int ata_size_mb = 0;
+static char ata_model_str[42] = "AuraOS Primary Hard Disk";
 
 static void ata_delay_400ns(void) {
     inb(ATA_CONTROL_PORT);
@@ -41,6 +46,8 @@ int ata_init(void) {
     if (status == 0xFF) {
         // Floating bus, no drive attached
         ata_drive_present = 0;
+        ata_total_sectors = 0;
+        ata_size_mb = 0;
         return -1;
     }
 
@@ -75,21 +82,98 @@ int ata_init(void) {
 
     // Wait until DRQ or ERR
     if (ata_wait_drq() == 0) {
-        // Read 256 words of IDENTIFY response to clear the buffer
+        // Read 256 words of IDENTIFY response
         for (int i = 0; i < 256; i++) {
-            inw(ATA_DATA_PORT);
+            ata_identify_data[i] = inw(ATA_DATA_PORT);
         }
         ata_drive_present = 1;
+
+        // Parse Model string (words 27..46)
+        int m_idx = 0;
+        for (int i = 0; i < 20; i++) {
+            unsigned short w = ata_identify_data[27 + i];
+            char c1 = (char)((w >> 8) & 0xFF);
+            char c2 = (char)(w & 0xFF);
+            ata_model_str[m_idx++] = (c1 >= 32 && c1 <= 126) ? c1 : ' ';
+            ata_model_str[m_idx++] = (c2 >= 32 && c2 <= 126) ? c2 : ' ';
+        }
+        ata_model_str[m_idx] = '\0';
+
+        // Trim trailing spaces
+        while (m_idx > 0 && ata_model_str[m_idx - 1] == ' ') {
+            ata_model_str[--m_idx] = '\0';
+        }
+
+        // Parse 28-bit LBA sectors (words 60..61)
+        unsigned int sec28 = (unsigned int)ata_identify_data[60] |
+                            ((unsigned int)ata_identify_data[61] << 16);
+
+        // Parse 48-bit LBA sectors (words 100..103)
+        unsigned int sec48_low = (unsigned int)ata_identify_data[100] |
+                                ((unsigned int)ata_identify_data[101] << 16);
+        unsigned int sec48_high = (unsigned int)ata_identify_data[102] |
+                                 ((unsigned int)ata_identify_data[103] << 16);
+
+        if (sec48_high > 0 || (sec48_low > sec28 && sec48_low > 20480)) {
+            // Large capacity hard disk (e.g. 8 GB, 20 GB, 40 GB in VMware)
+            ata_total_sectors = sec48_low;
+            unsigned int mb_high = sec48_high * 2048;
+            unsigned int mb_low = sec48_low / 2048;
+            ata_size_mb = mb_high + mb_low;
+        } else if (sec28 > 0) {
+            ata_total_sectors = sec28;
+            ata_size_mb = sec28 / 2048;
+        } else {
+            // CHS geometry fallback
+            unsigned int chs = (unsigned int)ata_identify_data[1] *
+                               (unsigned int)ata_identify_data[3] *
+                               (unsigned int)ata_identify_data[6];
+            ata_total_sectors = (chs > 0) ? chs : 20480;
+            ata_size_mb = ata_total_sectors / 2048;
+        }
+
+        if (ata_size_mb == 0) ata_size_mb = 10;
         return 0;
     }
 
-    // Drive responded but not in IDENTIFY DRQ; assume present if status valid
+    // Drive present fallback
     ata_drive_present = 1;
+    ata_total_sectors = 20480;
+    ata_size_mb = 10;
     return 0;
 }
 
 int ata_is_available(void) {
     return ata_drive_present;
+}
+
+unsigned int ata_get_total_sectors(void) {
+    return ata_total_sectors;
+}
+
+unsigned int ata_get_size_mb(void) {
+    return ata_size_mb;
+}
+
+const char *ata_get_model(void) {
+    return ata_model_str;
+}
+
+void ata_get_capacity_string(char *buf, int max_len) {
+    if (!buf || max_len < 8) return;
+    if (!ata_drive_present) {
+        strncpy(buf, "No Disk", max_len - 1);
+        buf[max_len - 1] = '\0';
+        return;
+    }
+
+    if (ata_size_mb >= 1024) {
+        int gb_whole = ata_size_mb / 1024;
+        int gb_tenth = ((ata_size_mb % 1024) * 10) / 1024;
+        snprintf(buf, max_len, "%d.%d GB", gb_whole, gb_tenth);
+    } else {
+        snprintf(buf, max_len, "%u MB", ata_size_mb);
+    }
 }
 
 int ata_read_sector(unsigned int lba, void *buf) {

@@ -16,29 +16,25 @@ static int file_picker_open = 0;
 static window_t *notes_win = 0;
 static int new_doc_counter = 1;
 
-// Save As Dialog State
+// Save As Dialog State (Full Path Customization Anywhere)
 static int save_as_modal_open = 0;
-static int save_as_folder = 0; // 0: Documents, 1: Storage, 2: System
+static int save_as_focus = 0; // 0: Filename, 1: Folder/Path
+static char save_as_folder_str[VFS_MAX_FOLDER] = "Documents";
+static int save_as_folder_len = 9;
 static char save_as_filename[VFS_MAX_FILENAME] = "DOC1.TXT";
 static int save_as_filename_len = 8;
-
-static const char *folder_names[3] = {
-    "Documents",
-    "Storage",
-    "System"
-};
 
 static const char *default_notes_content =
     "==================================================\n"
     "        AuraOS Notes & Document Editor\n"
     "==================================================\n"
-    "• Storage     : ATA PIO Hard Disk (Sector 512+)\n"
-    "• Features    : Live Open, Save, Save As, New\n"
-    "• Folders     : Documents, Storage, System\n\n"
+    "• Storage     : ATA Hard Disk Controller\n"
+    "• Features    : Live Open, Save, Save As, Custom Paths\n"
+    "• Paths       : Documents, Storage, System, Custom\n\n"
     "Quick Controls:\n"
     "• Click [Open File] to browse & load any system file\n"
     "• Click [Save] to write your changes back to disk\n"
-    "• Click [Save As] to select destination folder & filename\n"
+    "• Click [Save As] to type any custom path & filename\n"
     "• Click [New] to start a blank document\n"
     "• Type directly to edit, use Backspace to erase\n"
     "• Click anywhere in the editor to position cursor\n";
@@ -63,9 +59,18 @@ static void notes_init_buffer(void) {
 static void notes_open_save_as_dialog(void) {
     save_as_modal_open = 1;
     file_picker_open = 0;
-    save_as_folder = 0; // Default to Documents
+    save_as_focus = 0; // Focus filename by default
 
-    // Generate proposal filename
+    // Detect file's existing folder if any
+    vfs_file_t *f = vfs_find(current_filename);
+    if (f && f->folder[0] != '\0') {
+        strncpy(save_as_folder_str, f->folder, sizeof(save_as_folder_str) - 1);
+    } else {
+        strcpy(save_as_folder_str, "Documents");
+    }
+    save_as_folder_len = strlen(save_as_folder_str);
+
+    // Proposal filename
     if (strcmp(current_filename, "UNTITLED.TXT") == 0 || strcmp(current_filename, "CLIPBOARD.TXT") == 0) {
         snprintf(save_as_filename, sizeof(save_as_filename), "DOC%d.TXT", new_doc_counter++);
     } else {
@@ -102,19 +107,21 @@ static void notes_confirm_save_as(void) {
         strcpy(save_as_filename, "UNTITLED.TXT");
         save_as_filename_len = strlen(save_as_filename);
     }
+    if (save_as_folder_len == 0) {
+        strcpy(save_as_folder_str, "Documents");
+        save_as_folder_len = strlen(save_as_folder_str);
+    }
 
-    const char *folder = folder_names[save_as_folder];
     vfs_file_t *existing = vfs_find(save_as_filename);
-
     if (existing) {
         int res = vfs_write_file(save_as_filename, notes_buffer, notes_len);
         if (res == 0) {
-            vfs_move_file(save_as_filename, folder);
+            vfs_move_file(save_as_filename, save_as_folder_str);
             strncpy(current_filename, save_as_filename, sizeof(current_filename) - 1);
             current_filename[sizeof(current_filename) - 1] = '\0';
             is_modified = 0;
             save_as_modal_open = 0;
-            snprintf(status_msg, sizeof(status_msg), "Saved to C:\\%s\\%s on Disk!", folder, current_filename);
+            snprintf(status_msg, sizeof(status_msg), "Saved to C:\\%s\\%s on Disk!", save_as_folder_str, current_filename);
 
             if (notes_win) {
                 char title[64];
@@ -125,13 +132,13 @@ static void notes_confirm_save_as(void) {
             snprintf(status_msg, sizeof(status_msg), "Error writing to %s", save_as_filename);
         }
     } else {
-        int res = vfs_create_file(save_as_filename, folder, notes_buffer, notes_len, FS_ATTR_USER);
+        int res = vfs_create_file(save_as_filename, save_as_folder_str, notes_buffer, notes_len, FS_ATTR_USER);
         if (res == 0) {
             strncpy(current_filename, save_as_filename, sizeof(current_filename) - 1);
             current_filename[sizeof(current_filename) - 1] = '\0';
             is_modified = 0;
             save_as_modal_open = 0;
-            snprintf(status_msg, sizeof(status_msg), "Saved to C:\\%s\\%s on Disk!", folder, current_filename);
+            snprintf(status_msg, sizeof(status_msg), "Saved to C:\\%s\\%s on Disk!", save_as_folder_str, current_filename);
 
             if (notes_win) {
                 char title[64];
@@ -200,12 +207,10 @@ static void notes_draw(window_t *win) {
     int text_area_y = wy + tb_h + 1;
     int text_area_h = client_h - tb_h - 25;
 
-    // Gutter Background
     int gutter_w = 40;
     gfx_fillrect(wx, text_area_y, gutter_w, text_area_h, RGB(18, 20, 30));
     gfx_draw_line(wx + gutter_w, text_area_y, wx + gutter_w, text_area_y + text_area_h - 1, COLOR_BORDER);
 
-    // Text lines with line numbering
     int line_idx = 1;
     int text_x = wx + gutter_w + 10;
     int cur_y = text_area_y + 8;
@@ -276,24 +281,20 @@ static void notes_draw(window_t *win) {
         int pw = client_w - 56;
         int ph = client_h - tb_h - 38;
 
-        // Modal Frame
         gfx_fillrect(wx + px, wy + py, pw, ph, RGB(22, 25, 38));
         gfx_drawrect(wx + px, wy + py, pw, ph, COLOR_ACCENT);
 
-        // Modal Header
         gfx_fillrect(wx + px, wy + py, pw, 28, RGB(32, 38, 58));
         gfx_draw_line(wx + px, wy + py + 28, wx + px + pw, wy + py + 28, COLOR_BORDER);
         gfx_draw_string(wx + px + 12, wy + py + 6, "Open File from Disk (VFS)", COLOR_WHITE, COLOR_TRANSPARENT);
 
-        // Close 'X' button
         gfx_draw_string(wx + px + pw - 20, wy + py + 6, "X", RGB(240, 120, 130), COLOR_TRANSPARENT);
 
-        // Column Titles inside modal
         int list_top = wy + py + 34;
         gfx_draw_string(wx + px + 14,  list_top, "Type",   COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-        gfx_draw_string(wx + px + 70,  list_top, "Folder", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-        gfx_draw_string(wx + px + 160, list_top, "Filename", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-        gfx_draw_string(wx + px + 280, list_top, "Size",   COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(wx + px + 70,  list_top, "Path / Folder", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(wx + px + 180, list_top, "Filename", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(wx + px + 300, list_top, "Size",   COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
         gfx_draw_line(wx + px + 10, list_top + 18, wx + px + pw - 10, list_top + 18, COLOR_BORDER);
 
         int total_files = vfs_get_count();
@@ -314,15 +315,18 @@ static void notes_draw(window_t *win) {
             else if (strstr(f->name, ".LOG")) { badge = "[LOG]"; badge_col = RGB(148, 226, 213); }
 
             gfx_draw_string(wx + px + 14,  row_y + 3, badge, badge_col, COLOR_TRANSPARENT);
-            gfx_draw_string(wx + px + 70,  row_y + 3, f->folder, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-            gfx_draw_string(wx + px + 160, row_y + 3, f->name, COLOR_WHITE, COLOR_TRANSPARENT);
+
+            char folder_display[24];
+            snprintf(folder_display, sizeof(folder_display), "C:\\%s", f->folder);
+            gfx_draw_string(wx + px + 70,  row_y + 3, folder_display, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+            gfx_draw_string(wx + px + 180, row_y + 3, f->name, COLOR_WHITE, COLOR_TRANSPARENT);
 
             char sz_str[16];
             snprintf(sz_str, sizeof(sz_str), "%u B", f->size);
-            gfx_draw_string(wx + px + 280, row_y + 3, sz_str, COLOR_TEXT, COLOR_TRANSPARENT);
+            gfx_draw_string(wx + px + 300, row_y + 3, sz_str, COLOR_TEXT, COLOR_TRANSPARENT);
         }
 
-        // Cancel Button at bottom right of modal
         int cb_x = wx + px + pw - 84;
         int cb_y = wy + py + ph - 30;
         gfx_fillrect(cb_x, cb_y, 74, 22, RGB(42, 46, 68));
@@ -330,78 +334,94 @@ static void notes_draw(window_t *win) {
         gfx_draw_string(cb_x + 14, cb_y + 3, "Cancel", COLOR_WHITE, COLOR_TRANSPARENT);
     }
 
-    // 5. Interactive "Save File to Disk" Modal Overlay (when open)
+    // 5. Interactive "Save File to Disk" Modal with FULL PATH CUSTOMIZATION ANYWHERE
     if (save_as_modal_open) {
-        int px = 34;
-        int py = tb_h + 12;
-        int pw = client_w - 68;
-        int ph = 260;
+        int px = 28;
+        int py = tb_h + 8;
+        int pw = client_w - 56;
+        int ph = 276;
 
-        // Modal Frame
         gfx_fillrect(wx + px, wy + py, pw, ph, RGB(22, 25, 38));
         gfx_drawrect(wx + px, wy + py, pw, ph, COLOR_ACCENT);
 
         // Header
         gfx_fillrect(wx + px, wy + py, pw, 28, RGB(32, 38, 58));
         gfx_draw_line(wx + px, wy + py + 28, wx + px + pw, wy + py + 28, COLOR_BORDER);
-        gfx_draw_string(wx + px + 12, wy + py + 6, "Save File to Disk (Choose Destination)", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(wx + px + 12, wy + py + 6, "Save File to Disk - Custom Path & Name", COLOR_WHITE, COLOR_TRANSPARENT);
 
-        // Close 'X' button
         gfx_draw_string(wx + px + pw - 20, wy + py + 6, "X", RGB(240, 120, 130), COLOR_TRANSPARENT);
 
-        // Step 1: Destination Folder Selection
-        gfx_draw_string(wx + px + 16, wy + py + 38, "Where would you like to store this file on disk?", COLOR_ACCENT, COLOR_TRANSPARENT);
+        // Field 1: Destination Folder/Path Input Box
+        gfx_draw_string(wx + px + 16, wy + py + 36, "1. Destination Folder / Path (Click to edit anywhere):", COLOR_ACCENT, COLOR_TRANSPARENT);
 
-        for (int i = 0; i < 3; i++) {
-            int bx = wx + px + 16 + (i * 142);
-            int by = wy + py + 58;
-            int bw = 132;
-            int bh = 28;
-            int is_act = (save_as_folder == i);
+        int fb_x = wx + px + 16;
+        int fb_y = wy + py + 54;
+        int fb_w = pw - 32;
+        int fb_h = 26;
+        unsigned int fb_border = (save_as_focus == 1) ? COLOR_ACCENT : COLOR_BORDER;
+        gfx_fillrect(fb_x, fb_y, fb_w, fb_h, RGB(14, 16, 24));
+        gfx_drawrect(fb_x, fb_y, fb_w, fb_h, fb_border);
 
-            unsigned int btn_bg = is_act ? RGB(46, 76, 128) : RGB(28, 32, 48);
-            unsigned int btn_bd = is_act ? COLOR_ACCENT : COLOR_BORDER;
-            gfx_fillrect(bx, by, bw, bh, btn_bg);
-            gfx_drawrect(bx, by, bw, bh, btn_bd);
+        char disp_folder[64];
+        snprintf(disp_folder, sizeof(disp_folder), "C:\\%s", save_as_folder_str);
+        gfx_draw_string(fb_x + 10, fb_y + 5, disp_folder, (save_as_focus == 1) ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
 
-            char label[32];
-            snprintf(label, sizeof(label), "%s %s", is_act ? "[X]" : "[ ]", folder_names[i]);
-            gfx_draw_string(bx + 10, by + 6, label, is_act ? COLOR_WHITE : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-        }
-
-        // Step 2: Filename Input Box
-        gfx_draw_string(wx + px + 16, wy + py + 98, "Enter Filename (type to edit):", COLOR_WHITE, COLOR_TRANSPARENT);
-
-        int ib_x = wx + px + 16;
-        int ib_y = wy + py + 116;
-        int ib_w = pw - 32;
-        int ib_h = 28;
-        gfx_fillrect(ib_x, ib_y, ib_w, ib_h, RGB(14, 16, 24));
-        gfx_drawrect(ib_x, ib_y, ib_w, ib_h, COLOR_ACCENT);
-
-        gfx_draw_string(ib_x + 10, ib_y + 6, save_as_filename, COLOR_WHITE, COLOR_TRANSPARENT);
-
-        // Input cursor
-        if ((pit_get_ticks() / 30) % 2 == 0) {
-            int cur_x = ib_x + 10 + (save_as_filename_len * 8);
-            if (cur_x < ib_x + ib_w - 10) {
-                gfx_fillrect(cur_x, ib_y + 6, 8, 16, COLOR_ACCENT);
+        if (save_as_focus == 1 && (pit_get_ticks() / 30) % 2 == 0) {
+            int cur_x = fb_x + 10 + (strlen(disp_folder) * 8);
+            if (cur_x < fb_x + fb_w - 10) {
+                gfx_fillrect(cur_x, fb_y + 5, 8, 16, COLOR_ACCENT);
             }
         }
 
-        // Step 3: Target Summary & Storage Device info
-        int inf_y = wy + py + 154;
-        char path_summary[80];
-        snprintf(path_summary, sizeof(path_summary), "Target: C:\\%s\\%s", folder_names[save_as_folder], save_as_filename);
+        // Quick Preset Folder Buttons
+        gfx_draw_string(wx + px + 16, wy + py + 86, "Quick Presets:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        const char *presets[3] = { "Documents", "Storage", "System" };
+        for (int i = 0; i < 3; i++) {
+            int pbx = wx + px + 130 + (i * 105);
+            int pby = wy + py + 84;
+            int is_sel = (strcmp(save_as_folder_str, presets[i]) == 0);
+            gfx_fillrect(pbx, pby, 98, 22, is_sel ? RGB(46, 76, 128) : RGB(28, 32, 48));
+            gfx_drawrect(pbx, pby, 98, 22, is_sel ? COLOR_ACCENT : COLOR_BORDER);
+            gfx_draw_string(pbx + 8, pby + 3, presets[i], is_sel ? COLOR_WHITE : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        }
+
+        // Field 2: Filename Input Box
+        gfx_draw_string(wx + px + 16, wy + py + 116, "2. Filename (Click to edit name):", COLOR_ACCENT, COLOR_TRANSPARENT);
+
+        int ib_x = wx + px + 16;
+        int ib_y = wy + py + 134;
+        int ib_w = pw - 32;
+        int ib_h = 26;
+        unsigned int ib_border = (save_as_focus == 0) ? COLOR_ACCENT : COLOR_BORDER;
+        gfx_fillrect(ib_x, ib_y, ib_w, ib_h, RGB(14, 16, 24));
+        gfx_drawrect(ib_x, ib_y, ib_w, ib_h, ib_border);
+
+        gfx_draw_string(ib_x + 10, ib_y + 5, save_as_filename, (save_as_focus == 0) ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+
+        if (save_as_focus == 0 && (pit_get_ticks() / 30) % 2 == 0) {
+            int cur_x = ib_x + 10 + (save_as_filename_len * 8);
+            if (cur_x < ib_x + ib_w - 10) {
+                gfx_fillrect(cur_x, ib_y + 5, 8, 16, COLOR_ACCENT);
+            }
+        }
+
+        // Field 3: Target Summary & Real Physical Disk Info
+        int inf_y = wy + py + 172;
+        char path_summary[96];
+        snprintf(path_summary, sizeof(path_summary), "Target Path: C:\\%s\\%s", save_as_folder_str, save_as_filename);
         gfx_draw_string(wx + px + 16, inf_y, path_summary, RGB(166, 227, 161), COLOR_TRANSPARENT);
 
-        gfx_draw_string(wx + px + 16, inf_y + 18, "Media : ATA Primary Master (LBA Sector 516+, Live Disk Sync)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        char disk_sz_str[32];
+        vfs_get_disk_size_string(disk_sz_str, sizeof(disk_sz_str));
+        char disk_info_line[96];
+        snprintf(disk_info_line, sizeof(disk_info_line), "Storage Disk: %s (%s, Sector 516+)", vfs_get_disk_model(), disk_sz_str);
+        gfx_draw_string(wx + px + 16, inf_y + 20, disk_info_line, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
-        // Step 4: Action Buttons
-        int save_btn_x = wx + px + pw - 220;
+        // Field 4: Action Buttons
+        int save_btn_x = wx + px + pw - 230;
         int save_btn_y = wy + py + ph - 38;
-        gfx_fillrect(save_btn_x, save_btn_y, 130, 28, RGB(46, 76, 128));
-        gfx_drawrect(save_btn_x, save_btn_y, 130, 28, COLOR_ACCENT);
+        gfx_fillrect(save_btn_x, save_btn_y, 140, 28, RGB(46, 76, 128));
+        gfx_drawrect(save_btn_x, save_btn_y, 140, 28, COLOR_ACCENT);
         gfx_draw_string(save_btn_x + 14, save_btn_y + 6, "Save to Disk", COLOR_WHITE, COLOR_TRANSPARENT);
 
         int cancel_btn_x = wx + px + pw - 80;
@@ -419,10 +439,10 @@ static void notes_click(window_t *win, int rx, int ry, int btn) {
 
     // Handle "Save File to Disk" Modal clicks
     if (save_as_modal_open) {
-        int px = 34;
-        int py = tb_h + 12;
-        int pw = client_w - 68;
-        int ph = 260;
+        int px = 28;
+        int py = tb_h + 8;
+        int pw = client_w - 56;
+        int ph = 276;
 
         // Close 'X' button
         if (rx >= px + pw - 24 && rx <= px + pw && ry >= py && ry <= py + 28) {
@@ -430,20 +450,38 @@ static void notes_click(window_t *win, int rx, int ry, int btn) {
             return;
         }
 
-        // Folder selection buttons
+        // Click folder input box to focus folder editing
+        int fb_x = px + 16;
+        int fb_y = py + 54;
+        if (rx >= fb_x && rx <= fb_x + pw - 32 && ry >= fb_y && ry <= fb_y + 26) {
+            save_as_focus = 1;
+            return;
+        }
+
+        // Quick Preset buttons
+        const char *presets[3] = { "Documents", "Storage", "System" };
         for (int i = 0; i < 3; i++) {
-            int bx = px + 16 + (i * 142);
-            int by = py + 58;
-            if (rx >= bx && rx <= bx + 132 && ry >= by && ry <= by + 28) {
-                save_as_folder = i;
+            int pbx = px + 130 + (i * 105);
+            int pby = py + 84;
+            if (rx >= pbx && rx <= pbx + 98 && ry >= pby && ry <= pby + 22) {
+                strncpy(save_as_folder_str, presets[i], sizeof(save_as_folder_str) - 1);
+                save_as_folder_len = strlen(save_as_folder_str);
                 return;
             }
         }
 
+        // Click filename input box to focus filename editing
+        int ib_x = px + 16;
+        int ib_y = py + 134;
+        if (rx >= ib_x && rx <= ib_x + pw - 32 && ry >= ib_y && ry <= ib_y + 26) {
+            save_as_focus = 0;
+            return;
+        }
+
         // Save to Disk button
-        int save_btn_x = px + pw - 220;
+        int save_btn_x = px + pw - 230;
         int save_btn_y = py + ph - 38;
-        if (rx >= save_btn_x && rx <= save_btn_x + 130 && ry >= save_btn_y && ry <= save_btn_y + 28) {
+        if (rx >= save_btn_x && rx <= save_btn_x + 140 && ry >= save_btn_y && ry <= save_btn_y + 28) {
             notes_confirm_save_as();
             return;
         }
@@ -464,13 +502,11 @@ static void notes_click(window_t *win, int rx, int ry, int btn) {
         int pw = client_w - 56;
         int ph = client_h - tb_h - 38;
 
-        // Close 'X' button
         if (rx >= px + pw - 24 && rx <= px + pw && ry >= py && ry <= py + 28) {
             file_picker_open = 0;
             return;
         }
 
-        // Cancel button
         int cb_x = px + pw - 84;
         int cb_y = py + ph - 30;
         if (rx >= cb_x && rx <= cb_x + 74 && ry >= cb_y && ry <= cb_y + 22) {
@@ -478,7 +514,6 @@ static void notes_click(window_t *win, int rx, int ry, int btn) {
             return;
         }
 
-        // File rows selection
         int list_top = py + 34;
         int total_files = vfs_get_count();
         int max_picker_rows = 7;
@@ -509,7 +544,6 @@ static void notes_click(window_t *win, int rx, int ry, int btn) {
 
     // Handle Top Toolbar Buttons
     if (ry >= 4 && ry <= 30) {
-        // [ + New ]
         if (rx >= 8 && rx <= 68) {
             notes_buffer[0] = '\0';
             notes_len = 0;
@@ -521,19 +555,16 @@ static void notes_click(window_t *win, int rx, int ry, int btn) {
             return;
         }
 
-        // [ Open File ]
         if (rx >= 74 && rx <= 162) {
             file_picker_open = 1;
             return;
         }
 
-        // [ Save ]
         if (rx >= 168 && rx <= 226) {
             notes_save_current();
             return;
         }
 
-        // [ Save As ]
         if (rx >= 232 && rx <= 304) {
             notes_open_save_as_dialog();
             return;
@@ -584,23 +615,40 @@ static void notes_key(window_t *win, char key) {
             notes_confirm_save_as();
             return;
         }
-        if (key == '\t') { // Tab -> cycle folder
-            save_as_folder = (save_as_folder + 1) % 3;
+        if (key == '\t') { // Tab -> switch focus between folder and filename
+            save_as_focus = !save_as_focus;
             return;
         }
-        if (key == '\b') { // Backspace
-            if (save_as_filename_len > 0) {
-                save_as_filename[--save_as_filename_len] = '\0';
+
+        if (save_as_focus == 1) { // Editing Folder/Path
+            if (key == '\b') {
+                if (save_as_folder_len > 0) {
+                    save_as_folder_str[--save_as_folder_len] = '\0';
+                }
+                return;
             }
-            return;
-        }
-        if ((key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || key == '.' || key == '_' || key == '-') {
-            if (save_as_filename_len < VFS_MAX_FILENAME - 2) {
-                if (key >= 'a' && key <= 'z') key -= 32; // Uppercase
-                save_as_filename[save_as_filename_len++] = key;
-                save_as_filename[save_as_filename_len] = '\0';
+            if ((key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || key == '_' || key == '-' || key == '\\' || key == '/') {
+                if (save_as_folder_len < VFS_MAX_FOLDER - 2) {
+                    save_as_folder_str[save_as_folder_len++] = key;
+                    save_as_folder_str[save_as_folder_len] = '\0';
+                }
+                return;
             }
-            return;
+        } else { // Editing Filename
+            if (key == '\b') {
+                if (save_as_filename_len > 0) {
+                    save_as_filename[--save_as_filename_len] = '\0';
+                }
+                return;
+            }
+            if ((key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || key == '.' || key == '_' || key == '-') {
+                if (save_as_filename_len < VFS_MAX_FILENAME - 2) {
+                    if (key >= 'a' && key <= 'z') key -= 32; // Uppercase
+                    save_as_filename[save_as_filename_len++] = key;
+                    save_as_filename[save_as_filename_len] = '\0';
+                }
+                return;
+            }
         }
         return;
     }

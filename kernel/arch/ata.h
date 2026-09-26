@@ -30,6 +30,11 @@
 
 int  ata_init(void);
 int  ata_is_available(void);
+unsigned int ata_get_total_sectors(void);
+unsigned int ata_get_size_mb(void);
+const char  *ata_get_model(void);
+void ata_get_capacity_string(char *buf, int max_len);
+
 int  ata_read_sector(unsigned int lba, void *buf);
 int  ata_write_sector(unsigned int lba, const void *buf);
 int  ata_read_sectors(unsigned int lba, unsigned int count, void *buf);
