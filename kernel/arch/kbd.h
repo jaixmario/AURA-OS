@@ -1,0 +1,19 @@
+#ifndef KBD_H
+#define KBD_H
+
+#define KEY_ENTER     '\n'
+#define KEY_BACKSPACE '\b'
+#define KEY_TAB       '\t'
+#define KEY_ESC       27
+
+#define KEY_UP        0x80
+#define KEY_DOWN      0x81
+#define KEY_LEFT      0x82
+#define KEY_RIGHT     0x83
+
+void kbd_init(void);
+int  kbd_has_char(void);
+char kbd_get_char(void);
+unsigned char kbd_last_scancode(void);
+
+#endif

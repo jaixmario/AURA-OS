@@ -1,0 +1,9 @@
+# Intermediate build objects
+bin/*.o
+bin/*.bin
+__pycache__/
+*.pyc
+
+# Temporary screen captures
+*.ppm
+screenshot.bmp
