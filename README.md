@@ -32,13 +32,13 @@ You can boot AuraOS in VMware using either the **Bootable CD-ROM ISO** or the **
    ```
    auraos.iso
    ```
-4. For Guest Operating System, choose **Other** -> Version: **Other (32-bit)**.
+4. For Guest Operating System, choose **Other** -> Version: **Other** (In VMware, **Other** is the standard 32-bit x86 option, while **Other 64-bit** is also supported).
 5. Name your virtual machine (e.g. `AuraOS`) and allocate at least **128 MB RAM**.
 6. Power on the virtual machine. AuraOS will boot directly from the CD into the desktop!
 
 #### Method B: Using Virtual Disk (`auraos.vmdk`)
 1. Create a new virtual machine -> Select **I will install the operating system later**.
-2. Guest OS: **Other (32-bit)**.
+2. Guest OS: **Other** -> Version: **Other** (32-bit).
 3. When prompted for Disk, select **Use an existing virtual disk** -> Browse to `auraos.vmdk`.
 4. Power on the VM.
 
@@ -87,7 +87,7 @@ flowchart TD
 ### 1. Bootloader (`boot/boot.asm`)
 - **Size**: Exactly 512 bytes (fits in MBR sector 0).
 - **Disk I/O**: Reads 128 sectors (64 KB) of kernel image into RAM at `0x10000` using BIOS INT 0x13 Extension (LBA Packet).
-- **Display Setup**: Queries VBE 2.0+ mode `0x118` (1024x768) and activates it with Linear Frame Buffer (`0x4118`).
+- **Display Setup**: Dynamically queries VBE 2.0+ controller info (`AX=4F00h`) and scans available video modes for Linear Frame Buffer TrueColor modes (1024x768 32-bit / 24-bit with fallbacks for VMware SVGA, VirtualBox, and QEMU).
 - **Hardware Transition**: Enables Fast A20 gate, sets up Global Descriptor Table (GDT), enables protected mode (CR0 PE bit), and executes far jump to 32-bit kernel.
 
 ### 2. Kernel Core & Drivers (`kernel/arch/`)
