@@ -2,7 +2,11 @@ import subprocess
 import os
 import sys
 
-token = os.environ.get("GITHUB_TOKEN", "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")
+token = os.environ.get("GITHUB_TOKEN")
+if not token:
+    print("[!] Error: GITHUB_TOKEN environment variable is not set.")
+    sys.exit(1)
+
 remote_url = f"https://oauth2:{token}@github.com/jaixmario/AURA-OS.git"
 cwd = os.path.dirname(os.path.abspath(__file__))
 
