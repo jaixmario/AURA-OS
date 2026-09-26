@@ -3,7 +3,7 @@ import os
 import sys
 
 token = os.environ.get("GITHUB_TOKEN", "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")
-remote_url = f"https://{token}@github.com/jaixmario/AURA-OS.git"
+remote_url = f"https://oauth2:{token}@github.com/jaixmario/AURA-OS.git"
 cwd = os.path.dirname(os.path.abspath(__file__))
 
 def run(cmd, desc):
