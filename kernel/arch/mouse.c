@@ -17,6 +17,7 @@ static int btn_middle = 0;
 
 static int prev_btn_left = 0;
 static int left_clicked = 0;
+static int mouse_speed_level = 1; // 0=Slow, 1=Normal, 2=Fast
 
 static inline void mouse_wait_write(void) {
     int timeout = 100000;
@@ -78,12 +79,18 @@ static void mouse_callback(registers_t *regs) {
 
         // Discard overflow
         if (!(flags & 0xC0)) {
-            // Smooth adaptive acceleration curve
             int abs_dx = (dx < 0) ? -dx : dx;
             int abs_dy = (dy < 0) ? -dy : dy;
 
-            if (abs_dx > 4) dx += (dx > 0) ? (abs_dx - 4) / 2 : -(abs_dx - 4) / 2;
-            if (abs_dy > 4) dy += (dy > 0) ? (abs_dy - 4) / 2 : -(abs_dy - 4) / 2;
+            if (mouse_speed_level == 1) { // Normal (1.5x)
+                if (abs_dx > 4) dx += (dx > 0) ? (abs_dx - 4) / 2 : -(abs_dx - 4) / 2;
+                if (abs_dy > 4) dy += (dy > 0) ? (abs_dy - 4) / 2 : -(abs_dy - 4) / 2;
+            } else if (mouse_speed_level == 2) { // Fast (2x)
+                dx = (dx * 3) / 2;
+                dy = (dy * 3) / 2;
+                if (abs_dx > 4) dx += (dx > 0) ? (abs_dx - 4) : -(abs_dx - 4);
+                if (abs_dy > 4) dy += (dy > 0) ? (abs_dy - 4) : -(abs_dy - 4);
+            } // level 0 is 1x (slow precision)
 
             mouse_x += dx;
             mouse_y -= dy; // Invert Y because mouse coords go down-up, screen coords up-down
@@ -180,4 +187,14 @@ int mouse_clicked(int btn) {
         return c;
     }
     return 0;
+}
+
+void mouse_set_speed(int level) {
+    if (level >= 0 && level <= 2) {
+        mouse_speed_level = level;
+    }
+}
+
+int mouse_get_speed(void) {
+    return mouse_speed_level;
 }

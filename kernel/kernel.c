@@ -9,24 +9,59 @@
 #include "libc/string.h"
 
 static int start_menu_open = 0;
+static boot_info_t *g_boot_info = 0;
+static int current_theme = 0; // 0=Nebula, 1=Midnight, 2=Cyberpunk, 3=Emerald
+
+void set_desktop_theme(int theme) {
+    if (theme >= 0 && theme <= 3) current_theme = theme;
+}
+
+int get_desktop_theme(void) {
+    return current_theme;
+}
+
+boot_info_t *get_boot_info(void) {
+    return g_boot_info;
+}
 
 static void draw_wallpaper(void) {
     int w = gfx_get_width();
     int h = gfx_get_height();
 
-    // Top to bottom rich nebula gradient
-    gfx_gradient_v(0, 0, w, h - 48, RGB(22, 24, 38), RGB(34, 37, 56));
+    unsigned int top_col = RGB(22, 24, 38);
+    unsigned int bot_col = RGB(34, 37, 56);
+    unsigned int accent_grid = RGB(48, 52, 78);
+
+    if (current_theme == 1) { // Midnight Dark
+        top_col = RGB(14, 16, 24);
+        bot_col = RGB(22, 26, 38);
+        accent_grid = RGB(34, 38, 56);
+    } else if (current_theme == 2) { // Cyberpunk
+        top_col = RGB(32, 16, 42);
+        bot_col = RGB(16, 28, 52);
+        accent_grid = RGB(55, 30, 72);
+    } else if (current_theme == 3) { // Emerald Forest
+        top_col = RGB(14, 28, 24);
+        bot_col = RGB(20, 44, 38);
+        accent_grid = RGB(28, 55, 45);
+    }
+
+    gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
 
     // Subtle geometric horizon accent lines
     for (int y = h - 200; y < h - 48; y += 24) {
         int alpha_y = (y - (h - 200));
-        unsigned int line_col = RGB(36 + alpha_y / 10, 40 + alpha_y / 8, 62 + alpha_y / 6);
+        unsigned int line_col = RGB(
+            ((top_col >> 16) & 0xFF) + alpha_y / 10,
+            ((top_col >> 8) & 0xFF) + alpha_y / 8,
+            (top_col & 0xFF) + alpha_y / 6
+        );
         gfx_draw_line(0, y, w, y, line_col);
     }
 
     // Centered Desktop Brand Watermark
-    gfx_draw_string(w / 2 - 40, h / 2 - 30, "✦ AURA OS", RGB(48, 52, 78), COLOR_TRANSPARENT);
-    gfx_draw_string(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", RGB(40, 44, 66), COLOR_TRANSPARENT);
+    gfx_draw_string(w / 2 - 40, h / 2 - 30, "✦ AURA OS", accent_grid, COLOR_TRANSPARENT);
+    gfx_draw_string(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", accent_grid, COLOR_TRANSPARENT);
 }
 
 static void draw_taskbar(void) {
@@ -79,16 +114,18 @@ static void draw_taskbar(void) {
         unsigned int tab_bg = is_act ? COLOR_ACTIVE_HEADER : RGB(30, 32, 48);
         unsigned int tab_fg = is_act ? COLOR_WHITE : COLOR_TEXT_MUTED;
 
-        gfx_fillrect(btn_x, tb_y + 6, 132, 36, tab_bg);
-        gfx_drawrect(btn_x, tb_y + 6, 132, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
+        if (btn_x + 110 > w - 110) break;
+
+        gfx_fillrect(btn_x, tb_y + 6, 110, 36, tab_bg);
+        gfx_drawrect(btn_x, tb_y + 6, 110, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
 
         // Truncate title to fit button
-        char title_buf[15];
-        strncpy(title_buf, win->title, 14);
-        title_buf[14] = '\0';
-        gfx_draw_string(btn_x + 8, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
+        char title_buf[14];
+        strncpy(title_buf, win->title, 12);
+        title_buf[12] = '\0';
+        gfx_draw_string(btn_x + 7, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
 
-        btn_x += 140;
+        btn_x += 116;
     }
 
     // System Tray (Right side)
@@ -108,7 +145,7 @@ static void draw_start_menu(void) {
     int h = gfx_get_height();
     int menu_x = 8;
     int menu_w = 210;
-    int menu_h = 250;
+    int menu_h = 286;
     int menu_y = h - 48 - menu_h - 8;
 
     // Drop shadow
@@ -123,18 +160,19 @@ static void draw_start_menu(void) {
     gfx_draw_string(menu_x + 16, menu_y + 10, "Applications", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Menu items
-    const char *items[5] = {
+    const char *items[6] = {
         "> 1. Terminal",
         "> 2. Calculator",
         "> 3. Canvas Paint",
         "> 4. Notes Editor",
-        "> 5. System Info"
+        "> 5. Settings Panel",
+        "> 6. System Info"
     };
 
     int mx = mouse_get_x();
     int my = mouse_get_y();
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         int item_y = menu_y + 42 + (i * 38);
         int is_hover = (mx >= menu_x + 6 && mx <= menu_x + menu_w - 6 &&
                         my >= item_y && my <= item_y + 32);
@@ -162,18 +200,19 @@ static void handle_desktop_click(int mx, int my) {
     if (start_menu_open) {
         int menu_x = 8;
         int menu_w = 210;
-        int menu_h = 250;
+        int menu_h = 286;
         int menu_y = h - 48 - menu_h - 8;
 
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y && my <= menu_y + menu_h) {
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < 6; i++) {
                 int item_y = menu_y + 42 + (i * 38);
                 if (my >= item_y && my <= item_y + 32) {
                     if (i == 0) app_term_launch();
                     else if (i == 1) app_calc_launch();
                     else if (i == 2) app_paint_launch();
                     else if (i == 3) app_notes_launch();
-                    else if (i == 4) app_sysinfo_launch();
+                    else if (i == 4) app_settings_launch();
+                    else if (i == 5) app_sysinfo_launch();
                     start_menu_open = 0;
                     return;
                 }
@@ -187,11 +226,14 @@ static void handle_desktop_click(int mx, int my) {
     // Taskbar window item clicked (starts after left clock at x=212)
     if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 212) {
         int btn_x = 212;
+        int w = gfx_get_width();
         for (int i = 0; i < MAX_WINDOWS; i++) {
             window_t *win = wm_get_window_at_index(i);
             if (!win || !win->is_open) continue;
 
-            if (mx >= btn_x && mx <= btn_x + 132) {
+            if (btn_x + 110 > w - 110) break;
+
+            if (mx >= btn_x && mx <= btn_x + 110) {
                 if (win->is_minimized) {
                     wm_restore_window(win);
                 } else {
@@ -204,13 +246,14 @@ static void handle_desktop_click(int mx, int my) {
                 }
                 return;
             }
-            btn_x += 140;
+            btn_x += 116;
         }
     }
 }
 
 void kernel_main(boot_info_t *bi) {
     if (bi->magic != 0x41555241) return;
+    g_boot_info = bi;
 
     // 1. Initialize core architecture & interrupt descriptors
     idt_init();
@@ -239,6 +282,7 @@ void kernel_main(boot_info_t *bi) {
     app_calc_launch();
     app_term_launch();
     app_paint_launch();
+    app_settings_launch();
 
     // Main Desktop Event & Render Loop
     while (1) {

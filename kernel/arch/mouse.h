@@ -8,5 +8,7 @@ int  mouse_is_left_down(void);
 int  mouse_is_right_down(void);
 int  mouse_is_middle_down(void);
 int  mouse_clicked(int btn); // returns 1 once on left click release/press
+void mouse_set_speed(int level);
+int  mouse_get_speed(void);
 
 #endif

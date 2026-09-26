@@ -11,5 +11,8 @@ typedef struct {
 } __attribute__((packed)) boot_info_t;
 
 void kernel_main(boot_info_t *bi);
+void set_desktop_theme(int theme);
+int  get_desktop_theme(void);
+boot_info_t *get_boot_info(void);
 
 #endif

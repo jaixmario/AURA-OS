@@ -8,5 +8,6 @@ void app_calc_launch(void);
 void app_paint_launch(void);
 void app_sysinfo_launch(void);
 void app_notes_launch(void);
+void app_settings_launch(void);
 
 #endif

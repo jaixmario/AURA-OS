@@ -39,6 +39,7 @@ static void term_execute_command(void) {
         term_add_line("  paint    - open Canvas Paint app");
         term_add_line("  notes    - open Notes Editor app");
         term_add_line("  calc     - open Calculator app");
+        term_add_line("  settings - open Settings Control Panel");
         term_add_line("  sysinfo  - open System Specs app");
         term_add_line("  mem      - inspect memory regions");
         term_add_line("  uptime   - show system uptime");
@@ -54,6 +55,9 @@ static void term_execute_command(void) {
     } else if (strcmp(input_buf, "calc") == 0) {
         app_calc_launch();
         term_add_line("Launched Calculator.");
+    } else if (strcmp(input_buf, "settings") == 0) {
+        app_settings_launch();
+        term_add_line("Launched Settings Control Panel.");
     } else if (strcmp(input_buf, "sysinfo") == 0) {
         app_sysinfo_launch();
         term_add_line("Launched System Info.");

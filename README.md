@@ -74,7 +74,7 @@ flowchart TD
     DRIVERS["Hardware Drivers<br/>• PS/2 Mouse (IRQ12)<br/>• PS/2 Keyboard (IRQ1)<br/>• PIT 100Hz Timer (IRQ0)"]
     GFX["Graphics Engine<br/>• Double-Buffered VRAM<br/>• 2D Primitives & Gradients<br/>• 8x16 Bitmap Typography"]
     WM["Window Manager<br/>• Draggable Windows<br/>• Z-Order Stacking<br/>• Close/Min/Max Controls"]
-    APPS["Desktop & Apps<br/>• Terminal Shell (12+ commands)<br/>• Calculator (4-function GUI)<br/>• Canvas Paint (16 Colors & Tools)<br/>• Notes Editor (Text Editor)<br/>• System Info"]
+    APPS["Desktop & Apps<br/>• Terminal Shell (13+ commands)<br/>• Settings Control Panel (Themes & Mouse)<br/>• Calculator (4-function GUI)<br/>• Canvas Paint (16 Colors & Tools)<br/>• Notes Editor (Text Editor)<br/>• System Info"]
 
     MBR --> KERNEL
     KERNEL --> DRIVERS
@@ -93,13 +93,14 @@ flowchart TD
 ### 2. Kernel Core & Drivers (`kernel/arch/`)
 - **IDT (Interrupt Descriptor Table)**: 256 gates with CPU exception handlers (0..31) and hardware IRQs (32..47).
 - **8259 PIC**: Remaps Master PIC to INT 0x20-0x27 and Slave PIC to INT 0x28-0x2F.
-- **8254 PIT Timer**: Configured to 100 Hz (10ms resolution). Provides live uptime counter and digital clock.
+- **8254 PIT Timer**: Configured to 100 Hz (10ms resolution). Provides live uptime counter and left-side taskbar digital clock.
 - **PS/2 Keyboard**: Decodes scancodes, tracks modifier keys (Shift, Caps Lock), and buffers keystrokes for GUI apps.
-- **PS/2 Mouse**: Decodes 3-byte packets on IRQ12. Clamps coordinates to `1024x768`, tracks button clicks, dragging, and release events.
+- **PS/2 Mouse**: Configured to 200 Hz sample rate and 8 counts/mm resolution on IRQ12 with adaptive acceleration and selectable sensitivity (1.0x, 1.5x, 2.0x).
 
 ### 3. Graphics & Window Manager (`kernel/gfx/`, `kernel/wm/`)
-- **Double Buffering**: 3.2 MB backbuffer in physical RAM at `0x200000`. Guarantees 100% flicker-free rendering.
+- **Double Buffering**: 3.2 MB backbuffer in physical RAM at `0x200000` accelerated with x86 32-bit dword block transfers (`rep movsl` and `rep stosl`). Guarantees 100% flicker-free 60+ FPS rendering.
 - **2D Primitives**: Anti-aliased circles, gradient fills, drop shadows, clipping rectangles, and crisp 8x16 typography.
+- **Taskbar & Shell**: Live digital clock widget prominently positioned on the left next to the Start button, dynamic multi-window taskbar tabs, and system tray.
 - **Window Management**:
   - Overlapping floating windows with z-order focus.
   - Smooth mouse title bar grabbing & dragging.
@@ -108,9 +109,10 @@ flowchart TD
   - Active window header accent highlighting.
 
 ### 4. Interactive Applications (`kernel/apps/`)
+- ⚙️ **Settings Control Panel**: Multi-tab control center with live desktop wallpaper theme switching (Deep Nebula, Midnight Dark, Cyberpunk, Emerald Forest), mouse sensitivity toggle (Slow 1.0x, Normal 1.5x, Fast 2.0x), hardware VESA framebuffer readouts, and system statistics.
 - 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 6MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
 - 📝 **Notes Editor**: Multiline text editor with line numbers gutter, live keyboard typing, backspace deletion, and document statistics (lines, characters, encoding).
-- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `help`, `paint`, `notes`, `calc`, `sysinfo`, `mem`, `ver`, `date`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
+- 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `theme`, `mem`, `ver`, `date`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
 - 🧮 **Calculator**: Functional 16-button clickable desktop calculator supporting addition, subtraction, multiplication, and division.
 - ℹ️ **System Info**: Displays OS architecture, display specs, live memory allocation, uptime, and animated CPU activity bar.
 
@@ -140,6 +142,8 @@ AuraOS/
 │   │   ├── app_term.c      # Interactive Terminal application
 │   │   ├── app_calc.c      # Calculator application
 │   │   ├── app_paint.c     # Canvas Paint application
+│   │   ├── app_notes.c     # Multiline Notes text editor
+│   │   ├── app_settings.c  # Settings Control Panel
 │   │   └── app_sysinfo.c   # System Information dashboard
 │   ├── libc/
 │   │   └── string.h / string.c # Freestanding string & formatting library
