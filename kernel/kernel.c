@@ -41,17 +41,34 @@ static void draw_taskbar(void) {
     // Start Button ("✦ Aura")
     int mx = mouse_get_x();
     int my = mouse_get_y();
-    int is_hover_start = (mx >= 8 && mx <= 112 && my >= tb_y + 6 && my <= tb_y + 42);
+    int is_hover_start = (mx >= 8 && mx <= 100 && my >= tb_y + 6 && my <= tb_y + 42);
 
     unsigned int start_bg = is_hover_start ? COLOR_ACCENT : RGB(40, 43, 62);
     unsigned int start_fg = is_hover_start ? RGB(17, 17, 27) : COLOR_WHITE;
 
-    gfx_fillrect(8, tb_y + 6, 104, 36, start_bg);
-    gfx_drawrect(8, tb_y + 6, 104, 36, COLOR_BORDER);
-    gfx_draw_string(24, tb_y + 16, "✦ Aura", start_fg, COLOR_TRANSPARENT);
+    gfx_fillrect(8, tb_y + 6, 92, 36, start_bg);
+    gfx_drawrect(8, tb_y + 6, 92, 36, COLOR_BORDER);
+    gfx_draw_string(20, tb_y + 16, "✦ Aura", start_fg, COLOR_TRANSPARENT);
 
-    // Window items on taskbar
-    int btn_x = 124;
+    // Digital Clock Widget (Prominently on the LEFT)
+    int clock_x = 106;
+    int clock_w = 98;
+    int is_hover_clock = (mx >= clock_x && mx <= clock_x + clock_w && my >= tb_y + 6 && my <= tb_y + 42);
+
+    unsigned int total_sec = pit_get_uptime_seconds();
+    unsigned int hrs = (total_sec / 3600) % 24;
+    unsigned int mins = (total_sec / 60) % 60;
+    unsigned int secs = total_sec % 60;
+
+    char time_str[16];
+    snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", hrs, mins, secs);
+
+    gfx_fillrect(clock_x, tb_y + 6, clock_w, 36, is_hover_clock ? RGB(42, 46, 70) : RGB(30, 32, 48));
+    gfx_drawrect(clock_x, tb_y + 6, clock_w, 36, is_hover_clock ? COLOR_ACCENT : COLOR_BORDER);
+    gfx_draw_string(clock_x + 17, tb_y + 16, time_str, is_hover_clock ? COLOR_ACCENT : COLOR_WHITE, COLOR_TRANSPARENT);
+
+    // Window items on taskbar (starts after Left Clock at x=212)
+    int btn_x = 212;
     window_t *active = wm_get_active_window();
 
     for (int i = 0; i < MAX_WINDOWS; i++) {
@@ -62,39 +79,27 @@ static void draw_taskbar(void) {
         unsigned int tab_bg = is_act ? COLOR_ACTIVE_HEADER : RGB(30, 32, 48);
         unsigned int tab_fg = is_act ? COLOR_WHITE : COLOR_TEXT_MUTED;
 
-        gfx_fillrect(btn_x, tb_y + 6, 140, 36, tab_bg);
-        gfx_drawrect(btn_x, tb_y + 6, 140, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
+        gfx_fillrect(btn_x, tb_y + 6, 132, 36, tab_bg);
+        gfx_drawrect(btn_x, tb_y + 6, 132, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
 
         // Truncate title to fit button
-        char title_buf[16];
-        strncpy(title_buf, win->title, 15);
-        title_buf[15] = '\0';
-        gfx_draw_string(btn_x + 10, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
+        char title_buf[15];
+        strncpy(title_buf, win->title, 14);
+        title_buf[14] = '\0';
+        gfx_draw_string(btn_x + 8, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
 
-        btn_x += 148;
+        btn_x += 140;
     }
 
     // System Tray (Right side)
-    // Digital clock
-    unsigned int total_sec = pit_get_uptime_seconds();
-    unsigned int hrs = (total_sec / 3600) % 24;
-    unsigned int mins = (total_sec / 60) % 60;
-    unsigned int secs = total_sec % 60;
-
-    char time_str[16];
-    snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", hrs, mins, secs);
-
-    int clock_x = w - 90;
-    gfx_draw_string(clock_x, tb_y + 16, time_str, COLOR_WHITE, COLOR_TRANSPARENT);
-
     // RAM badge
-    int ram_x = clock_x - 110;
+    int ram_x = w - 104;
     gfx_fillrect(ram_x, tb_y + 10, 96, 28, RGB(30, 32, 48));
     gfx_drawrect(ram_x, tb_y + 10, 96, 28, COLOR_BORDER);
     gfx_draw_string(ram_x + 8, tb_y + 16, "RAM: 3.2MB", COLOR_ACCENT, COLOR_TRANSPARENT);
 
-    // Status dot
-    gfx_fill_circle(w - 115, tb_y + 24, 4, COLOR_GREEN);
+    // Live Status pulse dot
+    gfx_fill_circle(w - 114, tb_y + 24, 4, COLOR_GREEN);
 }
 
 static void draw_start_menu(void) {
@@ -148,7 +153,7 @@ static void handle_desktop_click(int mx, int my) {
     int tb_y = h - 48;
 
     // Start Button clicked
-    if (mx >= 8 && mx <= 112 && my >= tb_y + 6 && my <= tb_y + 42) {
+    if (mx >= 8 && mx <= 100 && my >= tb_y + 6 && my <= tb_y + 42) {
         start_menu_open = !start_menu_open;
         return;
     }
@@ -179,14 +184,14 @@ static void handle_desktop_click(int mx, int my) {
         }
     }
 
-    // Taskbar window item clicked
-    if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 124) {
-        int btn_x = 124;
+    // Taskbar window item clicked (starts after left clock at x=212)
+    if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 212) {
+        int btn_x = 212;
         for (int i = 0; i < MAX_WINDOWS; i++) {
             window_t *win = wm_get_window_at_index(i);
             if (!win || !win->is_open) continue;
 
-            if (mx >= btn_x && mx <= btn_x + 140) {
+            if (mx >= btn_x && mx <= btn_x + 132) {
                 if (win->is_minimized) {
                     wm_restore_window(win);
                 } else {
@@ -199,7 +204,7 @@ static void handle_desktop_click(int mx, int my) {
                 }
                 return;
             }
-            btn_x += 148;
+            btn_x += 140;
         }
     }
 }
