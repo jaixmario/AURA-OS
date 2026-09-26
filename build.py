@@ -44,6 +44,7 @@ def main():
         os.path.join(KERNEL_DIR, "arch", "kbd.c"),
         os.path.join(KERNEL_DIR, "arch", "mouse.c"),
         os.path.join(KERNEL_DIR, "arch", "rtc.c"),
+        os.path.join(KERNEL_DIR, "arch", "ata.c"),
         os.path.join(KERNEL_DIR, "gfx", "font.c"),
         os.path.join(KERNEL_DIR, "gfx", "gfx.c"),
         os.path.join(KERNEL_DIR, "wm", "wm.c"),

@@ -59,13 +59,13 @@ static void term_execute_command(void) {
         app_files_launch();
         term_add_line("Launched File Explorer.");
     } else if (strcmp(input_buf, "ls") == 0 || strcmp(input_buf, "dir") == 0) {
-        term_add_line("Directory of C:\\AuraOS\\Storage:");
+        term_add_line("Directory of C:\\AuraOS (ATA Hard Disk):");
         int cnt = vfs_get_count();
         for (int i = 0; i < cnt; i++) {
             vfs_file_t *f = vfs_get_at(i);
             char line[64];
-            snprintf(line, sizeof(line), "  %-12s %5u B  %04u-%02u-%02u",
-                     f->name, f->size, f->created_year, f->created_month, f->created_day);
+            snprintf(line, sizeof(line), "  %-12s [%-9s] %5u B  %04u-%02u-%02u",
+                     f->name, f->folder, f->size, f->created_year, f->created_month, f->created_day);
             term_add_line(line);
         }
     } else if (strncmp(input_buf, "cat ", 4) == 0) {
@@ -87,8 +87,8 @@ static void term_execute_command(void) {
         }
     } else if (strncmp(input_buf, "touch ", 6) == 0) {
         const char *fname = input_buf + 6;
-        if (vfs_create_file(fname, "", 0, FS_ATTR_USER) == 0) {
-            term_add_line("File created successfully.");
+        if (vfs_create_file(fname, "Documents", "", 0, FS_ATTR_USER) == 0) {
+            term_add_line("File created on hard disk.");
         } else {
             term_add_line("Error: Cannot create file.");
         }

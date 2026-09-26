@@ -11,6 +11,18 @@ static char status_msg[64] = "Ready";
 static unsigned int last_click_time = 0;
 static int last_clicked_index = -1;
 
+// "Store New File on Disk" Modal State
+static int new_file_modal_open = 0;
+static int new_file_folder = 0; // 0: Documents, 1: Storage, 2: System
+static char new_file_name[VFS_MAX_FILENAME] = "DOC1.TXT";
+static int new_file_name_len = 8;
+
+static const char *folder_names[3] = {
+    "Documents",
+    "Storage",
+    "System"
+};
+
 static int get_filtered_files(vfs_file_t *out_files[], int max_out) {
     int total = vfs_get_count();
     int count = 0;
@@ -20,11 +32,11 @@ static int get_filtered_files(vfs_file_t *out_files[], int max_out) {
         if (active_folder == 0) {
             out_files[count++] = f;
         } else if (active_folder == 1) {
-            if ((f->attr & FS_ATTR_USER) || strstr(f->name, ".TXT") || strstr(f->name, ".LOG") || strstr(f->name, ".SH")) {
+            if (strcmp(f->folder, "Documents") == 0) {
                 out_files[count++] = f;
             }
         } else if (active_folder == 2) {
-            if ((f->attr & (FS_ATTR_SYSTEM | FS_ATTR_READONLY)) || strstr(f->name, ".CFG") || strstr(f->name, ".SYS")) {
+            if (strcmp(f->folder, "System") == 0) {
                 out_files[count++] = f;
             }
         }
@@ -32,17 +44,51 @@ static int get_filtered_files(vfs_file_t *out_files[], int max_out) {
     return count;
 }
 
-static int count_folder_files(int folder) {
+static int count_folder_files(int folder_idx) {
     int total = vfs_get_count();
-    if (folder == 0) return total;
+    if (folder_idx == 0) return total;
     int c = 0;
+    const char *target = (folder_idx == 1) ? "Documents" : "System";
     for (int i = 0; i < total; i++) {
         vfs_file_t *f = vfs_get_at(i);
-        if (!f) continue;
-        if (folder == 1 && ((f->attr & FS_ATTR_USER) || strstr(f->name, ".TXT") || strstr(f->name, ".LOG") || strstr(f->name, ".SH"))) c++;
-        if (folder == 2 && ((f->attr & (FS_ATTR_SYSTEM | FS_ATTR_READONLY)) || strstr(f->name, ".CFG") || strstr(f->name, ".SYS"))) c++;
+        if (f && strcmp(f->folder, target) == 0) c++;
     }
     return c;
+}
+
+static void files_open_new_modal(void) {
+    new_file_modal_open = 1;
+    new_file_folder = (active_folder == 2) ? 2 : (active_folder == 1 ? 0 : 0);
+
+    for (int i = 1; i <= 99; i++) {
+        snprintf(new_file_name, sizeof(new_file_name), "DOC%d.TXT", new_doc_counter++);
+        if (!vfs_find(new_file_name)) break;
+    }
+    new_file_name_len = strlen(new_file_name);
+}
+
+static void files_confirm_new_file(void) {
+    if (new_file_name_len == 0) {
+        strcpy(new_file_name, "NEWFILE.TXT");
+        new_file_name_len = strlen(new_file_name);
+    }
+
+    const char *folder = folder_names[new_file_folder];
+    const char *sample = "✦ New Document created in AuraOS File Explorer.\nStored persistently on your ATA Hard Disk!\n";
+
+    int res = vfs_create_file(new_file_name, folder, sample, strlen(sample), FS_ATTR_USER);
+    if (res == 0) {
+        new_file_modal_open = 0;
+        snprintf(status_msg, sizeof(status_msg), "Created C:\\%s\\%s on Disk!", folder, new_file_name);
+
+        vfs_file_t *filtered[VFS_MAX_FILES];
+        int count = get_filtered_files(filtered, VFS_MAX_FILES);
+        selected_index = count - 1;
+    } else if (res == -2) {
+        snprintf(status_msg, sizeof(status_msg), "Error: File already exists!");
+    } else {
+        snprintf(status_msg, sizeof(status_msg), "Error: Disk storage full.");
+    }
 }
 
 static void files_draw(window_t *win) {
@@ -75,8 +121,9 @@ static void files_draw(window_t *win) {
 
     // [ + New ]
     int btn_new_x = wx + client_w - 236;
-    gfx_fillrect(btn_new_x, wy + 5, 76, 26, RGB(34, 38, 56));
-    gfx_drawrect(btn_new_x, wy + 5, 76, 26, RGB(60, 68, 96));
+    unsigned int new_bg = new_file_modal_open ? COLOR_ACCENT : RGB(34, 38, 56);
+    gfx_fillrect(btn_new_x, wy + 5, 76, 26, new_bg);
+    gfx_drawrect(btn_new_x, wy + 5, 76, 26, COLOR_ACCENT);
     gfx_draw_string(btn_new_x + 12, wy + 10, "+ New", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // [ Delete ]
@@ -99,7 +146,7 @@ static void files_draw(window_t *win) {
     gfx_draw_line(wx + sb_w, body_y, wx + sb_w, body_y + body_h - 1, COLOR_BORDER);
 
     // Category: QUICK ACCESS
-    gfx_draw_string(wx + 14, body_y + 10, "QUICK ACCESS", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_draw_string(wx + 14, body_y + 10, "STORAGE FOLDERS", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
     const char *folders[3] = {
         "Storage (All)",
@@ -128,14 +175,15 @@ static void files_draw(window_t *win) {
     int div_y = body_y + 138;
     gfx_draw_line(wx + 10, div_y, wx + sb_w - 10, div_y, COLOR_BORDER);
 
-    // Category: DRIVE (C:)
-    gfx_draw_string(wx + 14, div_y + 10, "DRIVE (C:)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    // Category: HARD DISK (C:)
+    gfx_draw_string(wx + 14, div_y + 10, "HARD DISK (C:)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
     int card_y = div_y + 30;
     gfx_fillrect(wx + 8, card_y, sb_w - 16, 76, RGB(14, 16, 24));
     gfx_drawrect(wx + 8, card_y, sb_w - 16, 76, COLOR_BORDER);
 
-    gfx_draw_string(wx + 14, card_y + 6, "RAMFS (FAT16)", COLOR_WHITE, COLOR_TRANSPARENT);
+    const char *drive_mode = vfs_is_disk_backed() ? "ATA Master (LBA)" : "RAMFS Cache";
+    gfx_draw_string(wx + 14, card_y + 6, drive_mode, COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Progress Bar for storage usage
     int bar_x = wx + 14;
@@ -173,9 +221,9 @@ static void files_draw(window_t *win) {
     gfx_fillrect(cx, cy, cw, head_h, RGB(22, 25, 38));
     gfx_draw_line(cx, cy + head_h, cx + cw, cy + head_h, COLOR_BORDER);
     gfx_draw_string(cx + 8,   cy + 4, "Filename", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 170, cy + 4, "Type",     COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_draw_string(cx + 164, cy + 4, "Folder",   COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     gfx_draw_string(cx + 250, cy + 4, "Size",     COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 330, cy + 4, "Date",     COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_draw_string(cx + 326, cy + 4, "Date",     COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
     // Filtered Files List
     vfs_file_t *filtered[VFS_MAX_FILES];
@@ -210,8 +258,7 @@ static void files_draw(window_t *win) {
         gfx_draw_string(cx + 8, ry + 3, badge, badge_col, COLOR_TRANSPARENT);
         gfx_draw_string(cx + 56, ry + 3, f->name, is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
 
-        const char *type_name = (f->attr & FS_ATTR_SYSTEM) ? "System" : ((f->attr & FS_ATTR_READONLY) ? "Read-Only" : "Document");
-        gfx_draw_string(cx + 170, ry + 3, type_name, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 164, ry + 3, f->folder, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
         char sz_str[16];
         snprintf(sz_str, sizeof(sz_str), "%u B", f->size);
@@ -219,7 +266,7 @@ static void files_draw(window_t *win) {
 
         char date_str[16];
         snprintf(date_str, sizeof(date_str), "%04u-%02u-%02u", f->created_year, f->created_month, f->created_day);
-        gfx_draw_string(cx + 330, ry + 3, date_str, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 326, ry + 3, date_str, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     }
 
     // 4. File Inspector & Live Preview Pane (height 94px)
@@ -233,13 +280,15 @@ static void files_draw(window_t *win) {
     if (sel_file) {
         // Left Column: File Details
         int det_w = 180;
-        gfx_draw_string(cx + 10, prev_y + 8, sel_file->name, COLOR_WHITE, COLOR_TRANSPARENT);
+        char title_loc[48];
+        snprintf(title_loc, sizeof(title_loc), "%s (C:\\%s)", sel_file->name, sel_file->folder);
+        gfx_draw_string(cx + 10, prev_y + 8, title_loc, COLOR_WHITE, COLOR_TRANSPARENT);
 
-        char meta1[32];
-        snprintf(meta1, sizeof(meta1), "Size: %u bytes", sel_file->size);
+        char meta1[48];
+        snprintf(meta1, sizeof(meta1), "Size: %u B | LBA: %u", sel_file->size, sel_file->disk_lba);
         gfx_draw_string(cx + 10, prev_y + 26, meta1, COLOR_ACCENT, COLOR_TRANSPARENT);
 
-        const char *perm = (sel_file->attr & FS_ATTR_SYSTEM) ? "System Protected" : ((sel_file->attr & FS_ATTR_READONLY) ? "Read-Only" : "Read / Write");
+        const char *perm = (sel_file->attr & FS_ATTR_SYSTEM) ? "System (Protected)" : ((sel_file->attr & FS_ATTR_READONLY) ? "Read-Only Disk File" : "Read/Write Disk File");
         gfx_draw_string(cx + 10, prev_y + 44, perm, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
         // Edit in Notes quick button
@@ -292,11 +341,89 @@ static void files_draw(window_t *win) {
 
     if (sel_file) {
         char stat_sel[48];
-        snprintf(stat_sel, sizeof(stat_sel), "Selected: %s (%u B)", sel_file->name, sel_file->size);
-        gfx_draw_string(wx + 120, status_y + 5, stat_sel, COLOR_WHITE, COLOR_TRANSPARENT);
+        snprintf(stat_sel, sizeof(stat_sel), "C:\\%s\\%s (%u B)", sel_file->folder, sel_file->name, sel_file->size);
+        gfx_draw_string(wx + 110, status_y + 5, stat_sel, COLOR_WHITE, COLOR_TRANSPARENT);
     }
 
     gfx_draw_string(wx + client_w - 240, status_y + 5, status_msg, COLOR_ACCENT, COLOR_TRANSPARENT);
+
+    // 6. Interactive "Store New File on Disk" Modal Overlay
+    if (new_file_modal_open) {
+        int px = 40;
+        int py = tb_h + 12;
+        int pw = client_w - 80;
+        int ph = 260;
+
+        gfx_fillrect(wx + px, wy + py, pw, ph, RGB(22, 25, 38));
+        gfx_drawrect(wx + px, wy + py, pw, ph, COLOR_ACCENT);
+
+        // Header
+        gfx_fillrect(wx + px, wy + py, pw, 28, RGB(32, 38, 58));
+        gfx_draw_line(wx + px, wy + py + 28, wx + px + pw, wy + py + 28, COLOR_BORDER);
+        gfx_draw_string(wx + px + 12, wy + py + 6, "Store New File on Disk (Select Location)", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        gfx_draw_string(wx + px + pw - 20, wy + py + 6, "X", RGB(240, 120, 130), COLOR_TRANSPARENT);
+
+        // Section 1: Folder Selection
+        gfx_draw_string(wx + px + 16, wy + py + 38, "Where would you like to store this file on disk?", COLOR_ACCENT, COLOR_TRANSPARENT);
+
+        for (int i = 0; i < 3; i++) {
+            int bx = wx + px + 16 + (i * 140);
+            int by = wy + py + 58;
+            int bw = 130;
+            int bh = 28;
+            int is_act = (new_file_folder == i);
+
+            unsigned int btn_bg = is_act ? RGB(46, 76, 128) : RGB(28, 32, 48);
+            unsigned int btn_bd = is_act ? COLOR_ACCENT : COLOR_BORDER;
+            gfx_fillrect(bx, by, bw, bh, btn_bg);
+            gfx_drawrect(bx, by, bw, bh, btn_bd);
+
+            char label[32];
+            snprintf(label, sizeof(label), "%s %s", is_act ? "[X]" : "[ ]", folder_names[i]);
+            gfx_draw_string(bx + 10, by + 6, label, is_act ? COLOR_WHITE : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        }
+
+        // Section 2: Filename input
+        gfx_draw_string(wx + px + 16, wy + py + 98, "Enter Filename (type to change):", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        int ib_x = wx + px + 16;
+        int ib_y = wy + py + 116;
+        int ib_w = pw - 32;
+        int ib_h = 28;
+        gfx_fillrect(ib_x, ib_y, ib_w, ib_h, RGB(14, 16, 24));
+        gfx_drawrect(ib_x, ib_y, ib_w, ib_h, COLOR_ACCENT);
+
+        gfx_draw_string(ib_x + 10, ib_y + 6, new_file_name, COLOR_WHITE, COLOR_TRANSPARENT);
+
+        // Input cursor
+        if ((pit_get_ticks() / 30) % 2 == 0) {
+            int cur_x = ib_x + 10 + (new_file_name_len * 8);
+            if (cur_x < ib_x + ib_w - 10) {
+                gfx_fillrect(cur_x, ib_y + 6, 8, 16, COLOR_ACCENT);
+            }
+        }
+
+        // Section 3: Summary
+        int inf_y = wy + py + 154;
+        char path_sum[80];
+        snprintf(path_sum, sizeof(path_sum), "Destination : C:\\%s\\%s", folder_names[new_file_folder], new_file_name);
+        gfx_draw_string(wx + px + 16, inf_y, path_sum, RGB(166, 227, 161), COLOR_TRANSPARENT);
+
+        gfx_draw_string(wx + px + 16, inf_y + 18, "Hardware    : ATA Primary Master (Sector 516+, Live Sync)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+        // Section 4: Buttons
+        int save_btn_x = wx + px + pw - 230;
+        int save_btn_y = wy + py + ph - 38;
+        gfx_fillrect(save_btn_x, save_btn_y, 140, 28, RGB(46, 76, 128));
+        gfx_drawrect(save_btn_x, save_btn_y, 140, 28, COLOR_ACCENT);
+        gfx_draw_string(save_btn_x + 14, save_btn_y + 6, "Create on Disk", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        int cancel_btn_x = wx + px + pw - 80;
+        gfx_fillrect(cancel_btn_x, save_btn_y, 70, 28, RGB(34, 38, 56));
+        gfx_drawrect(cancel_btn_x, save_btn_y, 70, 28, COLOR_BORDER);
+        gfx_draw_string(cancel_btn_x + 12, save_btn_y + 6, "Cancel", COLOR_TEXT, COLOR_TRANSPARENT);
+    }
 }
 
 static void files_click(window_t *win, int rx, int ry, int btn) {
@@ -305,6 +432,46 @@ static void files_click(window_t *win, int rx, int ry, int btn) {
     int client_h = win->height - TITLEBAR_HEIGHT;
     int tb_h = 36;
     int sb_w = 160;
+
+    // Handle "Store New File on Disk" Modal clicks
+    if (new_file_modal_open) {
+        int px = 40;
+        int py = tb_h + 12;
+        int pw = client_w - 80;
+        int ph = 260;
+
+        // Close 'X' button
+        if (rx >= px + pw - 24 && rx <= px + pw && ry >= py && ry <= py + 28) {
+            new_file_modal_open = 0;
+            return;
+        }
+
+        // Folder selection buttons
+        for (int i = 0; i < 3; i++) {
+            int bx = px + 16 + (i * 140);
+            int by = py + 58;
+            if (rx >= bx && rx <= bx + 130 && ry >= by && ry <= by + 28) {
+                new_file_folder = i;
+                return;
+            }
+        }
+
+        // Create on Disk button
+        int save_btn_x = px + pw - 230;
+        int save_btn_y = py + ph - 38;
+        if (rx >= save_btn_x && rx <= save_btn_x + 140 && ry >= save_btn_y && ry <= save_btn_y + 28) {
+            files_confirm_new_file();
+            return;
+        }
+
+        // Cancel button
+        int cancel_btn_x = px + pw - 80;
+        if (rx >= cancel_btn_x && rx <= cancel_btn_x + 70 && ry >= save_btn_y && ry <= save_btn_y + 28) {
+            new_file_modal_open = 0;
+            return;
+        }
+        return;
+    }
 
     // 1. Top Action Buttons
     if (ry >= 5 && ry <= 31) {
@@ -320,21 +487,10 @@ static void files_click(window_t *win, int rx, int ry, int btn) {
             return;
         }
 
-        // [ + New ]
+        // [ + New ] -> Opens "Store New File on Disk" dialog!
         int btn_new_x = client_w - 236;
         if (rx >= btn_new_x && rx <= btn_new_x + 76) {
-            char new_name[VFS_MAX_FILENAME];
-            for (int i = 1; i <= 99; i++) {
-                snprintf(new_name, sizeof(new_name), "DOC%d.TXT", new_doc_counter++);
-                if (!vfs_find(new_name)) break;
-            }
-            const char *sample = "✦ New Document created in AuraOS File Explorer.\nReady for editing!\n";
-            vfs_create_file(new_name, sample, strlen(sample), FS_ATTR_USER);
-
-            vfs_file_t *filtered[VFS_MAX_FILES];
-            int count = get_filtered_files(filtered, VFS_MAX_FILES);
-            selected_index = count - 1;
-            snprintf(status_msg, sizeof(status_msg), "Created %s", new_name);
+            files_open_new_modal();
             return;
         }
 
@@ -347,7 +503,7 @@ static void files_click(window_t *win, int rx, int ry, int btn) {
                 vfs_file_t *f = filtered[selected_index];
                 int res = vfs_delete_file(f->name);
                 if (res == 0) {
-                    snprintf(status_msg, sizeof(status_msg), "File deleted");
+                    snprintf(status_msg, sizeof(status_msg), "Deleted %s from Disk", f->name);
                     if (selected_index >= count - 1) selected_index = count - 2;
                     if (selected_index < 0) selected_index = 0;
                 } else if (res == -2) {
@@ -422,6 +578,38 @@ static void files_click(window_t *win, int rx, int ry, int btn) {
 
 static void files_key(window_t *win, char key) {
     (void)win;
+
+    // Keyboard handling inside "Store New File on Disk" modal
+    if (new_file_modal_open) {
+        if (key == 27) { // Escape -> cancel
+            new_file_modal_open = 0;
+            return;
+        }
+        if (key == '\n') { // Enter -> confirm
+            files_confirm_new_file();
+            return;
+        }
+        if (key == '\t') { // Tab -> cycle folder
+            new_file_folder = (new_file_folder + 1) % 3;
+            return;
+        }
+        if (key == '\b') { // Backspace
+            if (new_file_name_len > 0) {
+                new_file_name[--new_file_name_len] = '\0';
+            }
+            return;
+        }
+        if ((key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || key == '.' || key == '_' || key == '-') {
+            if (new_file_name_len < VFS_MAX_FILENAME - 2) {
+                if (key >= 'a' && key <= 'z') key -= 32; // Uppercase
+                new_file_name[new_file_name_len++] = key;
+                new_file_name[new_file_name_len] = '\0';
+            }
+            return;
+        }
+        return;
+    }
+
     vfs_file_t *filtered[VFS_MAX_FILES];
     int count = get_filtered_files(filtered, VFS_MAX_FILES);
     if (count == 0) return;
@@ -430,6 +618,8 @@ static void files_key(window_t *win, char key) {
         if (selected_index > 0) selected_index--;
     } else if (key == 's' || key == 'S') { // Down
         if (selected_index < count - 1) selected_index++;
+    } else if (key == 'n' || key == 'N') { // New file modal
+        files_open_new_modal();
     } else if (key == '\n') { // Enter -> Open file
         if (selected_index < count) {
             app_notes_open_file(filtered[selected_index]->name);
@@ -440,7 +630,7 @@ static void files_key(window_t *win, char key) {
             vfs_file_t *f = filtered[selected_index];
             int res = vfs_delete_file(f->name);
             if (res == 0) {
-                snprintf(status_msg, sizeof(status_msg), "File deleted");
+                snprintf(status_msg, sizeof(status_msg), "File deleted from disk");
                 if (selected_index >= count - 1) selected_index = count - 2;
                 if (selected_index < 0) selected_index = 0;
             } else if (res == -2) {

@@ -95,6 +95,7 @@ flowchart TD
 - **8259 PIC**: Remaps Master PIC to INT 0x20-0x27 and Slave PIC to INT 0x28-0x2F.
 - **8254 PIT Timer**: Configured to 100 Hz (10ms resolution). Provides live uptime counter and sub-second timing.
 - **CMOS Real-Time Clock (RTC)**: Interrogates hardware CMOS registers via I/O ports 0x70/0x71, decodes BCD/binary time and date, and provides live synchronization with host hardware.
+- **ATA PIO Hard Disk Controller**: Low-level hard disk driver operating on Primary ATA bus ports (`0x1F0`–`0x1F7`, `0x3F6`). Implements 28-bit LBA mode sector reading, writing, and cache flushing (`0xE7`), providing real disk persistence for `auraos.img` and VMware `auraos.vmdk`.
 - **PS/2 Keyboard**: Decodes scancodes, tracks modifier keys (Shift, Caps Lock), and buffers keystrokes for GUI apps.
 - **PS/2 Mouse**: Configured to 200 Hz sample rate and 8 counts/mm resolution on IRQ12 with adaptive acceleration and selectable sensitivity (1.0x, 1.5x, 2.0x).
 
@@ -110,10 +111,10 @@ flowchart TD
   - Active window header accent highlighting.
 
 ### 4. Interactive Applications (`kernel/apps/`)
-- 📁 **File Explorer**: User-friendly storage manager featuring a modern dark-glass interface with breadcrumb location bar, top action toolbar (`Open in Editor`, `+ New`, `Delete`, `Refresh`), sidebar category filters (`Storage C:`, `Documents`, `System Files`) with live badge counts, drive usage progress bar, color-coded file badges (`[TXT]`, `[CFG]`, `[SYS]`, `[SH]`, `[LOG]`), live monospace code preview card, double-click to open, and keyboard navigation (W/S, Enter, D, N).
+- 📁 **File Explorer**: User-friendly storage manager featuring a modern dark-glass interface with breadcrumb location bar, top action toolbar (`Open in Editor`, `+ New`, `Delete`, `Refresh`), interactive "Store New File on Disk" dialog modal asking where to store files (`Documents`, `Storage`, or `System`), sidebar category filters with live badge counts, drive usage progress bar, color-coded file badges (`[TXT]`, `[CFG]`, `[SYS]`, `[SH]`, `[LOG]`), live monospace code preview card, double-click to open, and keyboard navigation (W/S, Enter, D, N).
 - ⚙️ **Settings Control Panel**: Multi-tab control center with live desktop wallpaper theme switching, Date & Time adjustments (hours, minutes, days, months, years) with bidirectional CMOS hardware synchronization and saving, mouse sensitivity toggle, hardware VESA framebuffer readouts, and system statistics.
 - 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 6MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
-- 📝 **Notes Editor**: Multiline document editor with top action toolbar (`+ New`, `Open File`, `Save`, `Save As`), active file indicator badge (`[ok]` / `* (Mod)`), interactive in-window Open File picker dialog, direct VFS read/write persistence, gutter line numbering, and seamless inter-app opening from File Explorer and Terminal (`edit <file>`).
+- 📝 **Notes Editor**: Multiline document editor with top action toolbar (`+ New`, `Open File`, `Save`, `Save As`), interactive "Save File to Disk" dialog modal asking where to store files on disk (`Documents`, `Storage`, `System`) and filename input, active file indicator badge (`[ok]` / `* (Mod)`), interactive in-window Open File picker dialog, direct ATA hard disk sector persistence, gutter line numbering, and seamless inter-app opening from File Explorer and Terminal (`edit <file>`).
 - 💻 **Terminal**: Interactive shell with command prompt (`aura@kernel:~$ `). Supports `files`, `edit <f>`, `ls`/`dir`, `cat`, `touch`, `rm`, `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `date`/`time`, `sync`, `theme`, `mem`, `ver`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
 - 🧮 **Calculator**: Functional 16-button clickable desktop calculator supporting addition, subtraction, multiplication, and division.
 - ℹ️ **System Info**: Displays OS architecture, display specs, live memory allocation, uptime, and animated CPU activity bar.
@@ -133,6 +134,7 @@ AuraOS/
 │   │   ├── pic.h / pic.c   # 8259 PIC initialization & EOI
 │   │   ├── pit.h / pit.c   # 8254 Timer & Uptime counter
 │   │   ├── rtc.h / rtc.c   # CMOS Real-Time Clock & Date driver
+│   │   ├── ata.h / ata.c   # ATA PIO Hard Disk driver & Sector I/O
 │   │   ├── kbd.h / kbd.c   # PS/2 Keyboard scancode decoder
 │   │   └── mouse.h / mouse.c # PS/2 Mouse packet decoder & coordinates
 │   ├── fs/
