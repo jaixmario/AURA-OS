@@ -4,6 +4,7 @@
 #include "arch/kbd.h"
 #include "arch/mouse.h"
 #include "arch/rtc.h"
+#include "fs/vfs.h"
 #include "gfx/gfx.h"
 #include "wm/wm.h"
 #include "apps/apps.h"
@@ -147,7 +148,7 @@ static void draw_start_menu(void) {
     int h = gfx_get_height();
     int menu_x = 8;
     int menu_w = 210;
-    int menu_h = 286;
+    int menu_h = 324;
     int menu_y = h - 48 - menu_h - 8;
 
     // Drop shadow
@@ -162,19 +163,20 @@ static void draw_start_menu(void) {
     gfx_draw_string(menu_x + 16, menu_y + 10, "Applications", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Menu items
-    const char *items[6] = {
-        "> 1. Terminal",
-        "> 2. Calculator",
-        "> 3. Canvas Paint",
-        "> 4. Notes Editor",
-        "> 5. Settings Panel",
-        "> 6. System Info"
+    const char *items[7] = {
+        "> 1. File Explorer",
+        "> 2. Terminal",
+        "> 3. Calculator",
+        "> 4. Canvas Paint",
+        "> 5. Notes Editor",
+        "> 6. Settings Panel",
+        "> 7. System Info"
     };
 
     int mx = mouse_get_x();
     int my = mouse_get_y();
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 7; i++) {
         int item_y = menu_y + 42 + (i * 38);
         int is_hover = (mx >= menu_x + 6 && mx <= menu_x + menu_w - 6 &&
                         my >= item_y && my <= item_y + 32);
@@ -203,19 +205,20 @@ static void handle_desktop_click(int mx, int my) {
     if (start_menu_open) {
         int menu_x = 8;
         int menu_w = 210;
-        int menu_h = 286;
+        int menu_h = 324;
         int menu_y = h - 48 - menu_h - 8;
 
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y && my <= menu_y + menu_h) {
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 7; i++) {
                 int item_y = menu_y + 42 + (i * 38);
                 if (my >= item_y && my <= item_y + 32) {
-                    if (i == 0) app_term_launch();
-                    else if (i == 1) app_calc_launch();
-                    else if (i == 2) app_paint_launch();
-                    else if (i == 3) app_notes_launch();
-                    else if (i == 4) app_settings_launch();
-                    else if (i == 5) app_sysinfo_launch();
+                    if (i == 0) app_files_launch();
+                    else if (i == 1) app_term_launch();
+                    else if (i == 2) app_calc_launch();
+                    else if (i == 3) app_paint_launch();
+                    else if (i == 4) app_notes_launch();
+                    else if (i == 5) app_settings_launch();
+                    else if (i == 6) app_sysinfo_launch();
                     start_menu_open = 0;
                     return;
                 }
@@ -283,13 +286,16 @@ void kernel_main(boot_info_t *bi) {
     // 5. Initialize Hardware CMOS Real-Time Clock
     rtc_init();
 
+    // 6. Initialize Virtual File System
+    vfs_init();
+
     // Enable CPU interrupts!
     __asm__ volatile ("sti");
 
-    // 5. Initialize Graphics Subsystem
+    // 7. Initialize Graphics Subsystem
     gfx_init(bi);
 
-    // 6. Initialize Window Manager
+    // 8. Initialize Window Manager
     wm_init();
 
     // Launch default initial windows
@@ -299,6 +305,7 @@ void kernel_main(boot_info_t *bi) {
     app_term_launch();
     app_paint_launch();
     app_settings_launch();
+    app_files_launch();
 
     // Main Desktop Event & Render Loop
     while (1) {

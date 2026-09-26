@@ -2,6 +2,7 @@
 #include "../gfx/gfx.h"
 #include "../arch/pit.h"
 #include "../arch/rtc.h"
+#include "../fs/vfs.h"
 #include "../arch/io.h"
 #include "../libc/string.h"
 
@@ -36,7 +37,11 @@ static void term_execute_command(void) {
 
     if (strcmp(input_buf, "help") == 0) {
         term_add_line("AuraOS Terminal Commands:");
-        term_add_line("  help     - show this command manual");
+        term_add_line("  files    - open File Explorer GUI");
+        term_add_line("  ls / dir - list files in storage");
+        term_add_line("  cat <f>  - display file contents");
+        term_add_line("  touch <f>- create empty file");
+        term_add_line("  rm <f>   - delete file");
         term_add_line("  paint    - open Canvas Paint app");
         term_add_line("  notes    - open Notes Editor app");
         term_add_line("  calc     - open Calculator app");
@@ -49,6 +54,53 @@ static void term_execute_command(void) {
         term_add_line("  clear/cls- clear terminal screen");
         term_add_line("  echo <t> - print message");
         term_add_line("  reboot   - restart virtual machine");
+    } else if (strcmp(input_buf, "files") == 0 || strcmp(input_buf, "explorer") == 0) {
+        app_files_launch();
+        term_add_line("Launched File Explorer.");
+    } else if (strcmp(input_buf, "ls") == 0 || strcmp(input_buf, "dir") == 0) {
+        term_add_line("Directory of C:\\AuraOS\\Storage:");
+        int cnt = vfs_get_count();
+        for (int i = 0; i < cnt; i++) {
+            vfs_file_t *f = vfs_get_at(i);
+            char line[64];
+            snprintf(line, sizeof(line), "  %-12s %5u B  %04u-%02u-%02u",
+                     f->name, f->size, f->created_year, f->created_month, f->created_day);
+            term_add_line(line);
+        }
+    } else if (strncmp(input_buf, "cat ", 4) == 0) {
+        const char *fname = input_buf + 4;
+        vfs_file_t *f = vfs_find(fname);
+        if (f) {
+            // Print first line or snippet
+            char snippet[60];
+            int s_i = 0;
+            for (int k = 0; k < (int)f->size && k < 58; k++) {
+                char c = f->data[k];
+                if (c == '\n' || c == '\r') break;
+                snippet[s_i++] = c;
+            }
+            snippet[s_i] = '\0';
+            term_add_line(snippet);
+        } else {
+            term_add_line("Error: File not found.");
+        }
+    } else if (strncmp(input_buf, "touch ", 6) == 0) {
+        const char *fname = input_buf + 6;
+        if (vfs_create_file(fname, "", 0, FS_ATTR_USER) == 0) {
+            term_add_line("File created successfully.");
+        } else {
+            term_add_line("Error: Cannot create file.");
+        }
+    } else if (strncmp(input_buf, "rm ", 3) == 0) {
+        const char *fname = input_buf + 3;
+        int res = vfs_delete_file(fname);
+        if (res == 0) {
+            term_add_line("File deleted successfully.");
+        } else if (res == -2) {
+            term_add_line("Error: Cannot delete protected system file.");
+        } else {
+            term_add_line("Error: File not found.");
+        }
     } else if (strcmp(input_buf, "paint") == 0) {
         app_paint_launch();
         term_add_line("Launched Canvas Paint.");

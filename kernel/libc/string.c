@@ -125,6 +125,21 @@ char *strcat(char *dest, const char *src) {
     return dest;
 }
 
+char *strstr(const char *haystack, const char *needle) {
+    if (!*needle) return (char *)haystack;
+    while (*haystack) {
+        const char *h = haystack;
+        const char *n = needle;
+        while (*h && *n && (*h == *n)) {
+            h++;
+            n++;
+        }
+        if (!*n) return (char *)haystack;
+        haystack++;
+    }
+    return 0;
+}
+
 void itoa(int n, char *str, int base) {
     int i = 0;
     int is_negative = 0;

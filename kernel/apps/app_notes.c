@@ -129,3 +129,15 @@ void app_notes_launch(void) {
     win->draw_client = notes_draw;
     win->on_key = notes_key;
 }
+
+void app_notes_load_text(const char *text) {
+    if (!text) return;
+    strncpy(notes_buffer, text, NOTES_MAX_CHARS - 1);
+    notes_buffer[NOTES_MAX_CHARS - 1] = '\0';
+    notes_len = strlen(notes_buffer);
+    notes_cursor = notes_len;
+    window_t *win = wm_create_window("Notes Editor", 240, 160, 480, 340, RGB(26, 28, 40));
+    if (!win) return;
+    win->draw_client = notes_draw;
+    win->on_key = notes_key;
+}

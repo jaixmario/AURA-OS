@@ -1,7 +1,7 @@
 #ifndef WM_H
 #define WM_H
 
-#define MAX_WINDOWS 8
+#define MAX_WINDOWS 12
 #define TITLEBAR_HEIGHT 32
 
 typedef struct window {
