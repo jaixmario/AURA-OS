@@ -20,8 +20,8 @@ def make_bootable_iso(boot_bin, kernel_bin, iso_path):
     # boot.bin runs at 0x7C00 and finds kernel.bin already at 0x7E00.
     payload = bytearray(boot_data)
     payload.extend(kernel_data)
-    # Pad payload to multiple of 2048 bytes (at least 64 sectors = 32768 bytes)
-    target_payload_len = 32768
+    # Pad payload to 128 sectors = 65536 bytes (64 KB)
+    target_payload_len = 65536
     if len(payload) < target_payload_len:
         payload.extend(b'\x00' * (target_payload_len - len(payload)))
 
@@ -74,7 +74,7 @@ HEAP_SIZE_MB=16
         "-J", "-R", # Joliet & Rock Ridge extensions
         "-b", "boot.bin", # Boot image
         "-no-emul-boot",  # El Torito No Emulation
-        "-boot-load-size", "64", # Load 64 sectors (32 KB)
+        "-boot-load-size", "128", # Load 128 sectors (64 KB)
         "-o", iso_path,
         iso_root
     ]

@@ -16,14 +16,20 @@ start:
     cmp dword [0x7E00], 0x0010B866
     jne .read_disk
 
-    ; CD-ROM boot: copy 32KB kernel from 0x7E00 to 0x10000
+    ; CD-ROM boot: copy 64KB kernel backwards from 0x7E00 to 0x10000
+    ; Backwards copy prevents overlapping destination (0x10000) from corrupting source (0x7E00)
+    mov ax, 0x07E0
+    mov ds, ax
     mov ax, 0x1000
     mov es, ax
-    mov si, 0x7E00
-    xor di, di
-    mov cx, 8192
+    mov si, 0xFFFC
+    mov di, 0xFFFC
+    mov cx, 16384       ; 16384 dwords = 65536 bytes (64 KB)
+    std
     rep movsd
+    cld
     xor ax, ax
+    mov ds, ax
     mov es, ax
     jmp .kernel_ready
 
