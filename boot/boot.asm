@@ -20,15 +20,20 @@ start:
     jmp .kernel_ready
 
 .read_disk:
+    xor ax, ax                 ; Reset disk subsystem
+    int 0x13
+
     mov si, dap
-    mov cx, 2
+    mov bp, 4                  ; 4 chunks of 64 sectors = 256 sectors (128 KB)
 .read_loop:
+    mov dl, [boot_drive]
     mov ah, 0x42
     int 0x13
     jc disk_error
-    add word [si + 6], 0x1000  ; Next segment: 0x1000 -> 0x2000
-    add word [si + 8], 128     ; Next LBA sector: 1 -> 129
-    loop .read_loop
+    add word [si + 6], 0x0800  ; Next segment: +32KB (0x1000 -> 0x1800 -> 0x2000 -> 0x2800)
+    add word [si + 8], 64      ; Next LBA sector: +64 (1 -> 65 -> 129 -> 193)
+    dec bp
+    jnz .read_loop
 
 .kernel_ready:
     ; 2. Dynamic VBE Mode Detection
@@ -73,17 +78,15 @@ start:
 
     ; Check for 1024x768
     cmp ax, 1024
-    jne .check_800
+    jne .save_fallback
     cmp dx, 768
-    jne .check_800
+    jne .save_fallback
     mov [0x7010], cx
-    jmp .scan_done       ; Optimal found, finish immediately!
+    jmp .scan_done
 
-.check_800:
-    cmp ax, 800
-    jne .scan_loop
-    cmp dx, 600
-    jne .scan_loop
+.save_fallback:
+    cmp word [0x7010], 0
+    jnz .scan_loop
     mov [0x7010], cx
     jmp .scan_loop
 
@@ -182,10 +185,11 @@ pm_start:
 .jump_kernel:
     jmp 0x10000
 
+    db 0                       ; 1-byte padding to align dap on 4-byte boundary
 dap:
     db 0x10, 0
-    dw 128
-    dw 0x0000, 0x1000
+    dw 64                      ; 64 sectors = 32 KB per chunk (safe <= 127 limit)
+    dw 0x0000, 0x1000          ; Target: 0x1000:0x0000 -> 0x10000 physical
     dq 1
 
 is_live_boot: db 0

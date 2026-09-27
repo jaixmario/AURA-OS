@@ -36,6 +36,7 @@ static void installer_reset_fields(void) {
 }
 
 static void installer_draw_sidebar(window_t *win, int wx, int wy, int sb_w, int client_h) {
+    (void)win;
     gfx_fillrect(wx, wy, sb_w, client_h, RGB(18, 20, 30));
     gfx_draw_line(wx + sb_w, wy, wx + sb_w, wy + client_h - 1, COLOR_BORDER);
 
@@ -225,18 +226,25 @@ static void installer_draw_step_disk(int cx, int cy, int cw) {
     gfx_fillrect(cx, card_y, cw, card_h, RGB(22, 24, 36));
     gfx_drawrect(cx, card_y, cw, card_h, COLOR_ACCENT);
 
-    gfx_draw_string(cx + 14, card_y + 10, "Target Hard Disk:", COLOR_WHITE, COLOR_TRANSPARENT);
+    if (!ata_is_available()) {
+        gfx_draw_string(cx + 14, card_y + 10, "Target Hard Disk: [!] NO ATA/IDE DISK FOUND", COLOR_RED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 32, "VMware: In VM Settings, ensure Virtual Disk is set to IDE.", COLOR_YELLOW, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 54, "SCSI / SATA / NVMe controllers are not supported.", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 76, "Please add an IDE Hard Disk in VM Settings and reboot.", COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 98, "Target: Primary Master IDE (0:0)", COLOR_ACCENT, COLOR_TRANSPARENT);
+    } else {
+        char l1[64], l2[64], l3[64], l4[64];
+        snprintf(l1, sizeof(l1), "- Model      : %s", ata_get_model());
+        snprintf(l2, sizeof(l2), "- Total Size : %s (%u sectors)", cap_str, ata_get_total_sectors());
+        snprintf(l3, sizeof(l3), "- MBR Boot   : Sector 0 (Active FAT16 Partition 1)");
+        snprintf(l4, sizeof(l4), "- VFS Storage: LBA 512 (Superblock) & Clusters");
 
-    char l1[64], l2[64], l3[64], l4[64];
-    snprintf(l1, sizeof(l1), "- Model      : %s", ata_get_model());
-    snprintf(l2, sizeof(l2), "- Total Size : %s (%u sectors)", cap_str, ata_get_total_sectors());
-    snprintf(l3, sizeof(l3), "- MBR Boot   : Sector 0 (Active FAT16 Partition 1)");
-    snprintf(l4, sizeof(l4), "- VFS Storage: LBA 512 (Superblock) & Clusters");
-
-    gfx_draw_string(cx + 14, card_y + 32, l1, COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 14, card_y + 54, l2, COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 14, card_y + 76, l3, COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 14, card_y + 98, l4, COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 10, "Target Hard Disk:", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 32, l1, COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 54, l2, COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 76, l3, COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 98, l4, COLOR_TEXT, COLOR_TRANSPARENT);
+    }
 
     // Selected Installation Mode Radio Box
     int radio_y = card_y + card_h + 14;
@@ -260,9 +268,10 @@ static void installer_draw_step_disk(int cx, int cy, int cw) {
     gfx_draw_string(cx + 20, btn_y + 8, "< Back", COLOR_TEXT, COLOR_TRANSPARENT);
 
     // [ Install Now > ]
-    gfx_fillrect(cx + cw - 160, btn_y, 160, 32, RGB(40, 167, 69));
-    gfx_drawrect(cx + cw - 160, btn_y, 160, 32, COLOR_WHITE);
-    gfx_draw_string(cx + cw - 146, btn_y + 8, "Install AuraOS >", COLOR_WHITE, COLOR_TRANSPARENT);
+    unsigned int btn_col = ata_is_available() ? RGB(40, 167, 69) : RGB(70, 70, 80);
+    gfx_fillrect(cx + cw - 160, btn_y, 160, 32, btn_col);
+    gfx_drawrect(cx + cw - 160, btn_y, 160, 32, ata_is_available() ? COLOR_WHITE : COLOR_BORDER);
+    gfx_draw_string(cx + cw - 146, btn_y + 8, "Install AuraOS >", ata_is_available() ? COLOR_WHITE : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 }
 
 static void installer_draw_step_installing(int cx, int cy, int cw) {
@@ -345,19 +354,30 @@ static void installer_draw_step_complete(int cx, int cy, int cw) {
 }
 
 static void installer_perform_disk_write(void) {
+    if (!ata_is_available()) {
+        strncpy(install_status_msg, "Error: No primary ATA/IDE hard disk found!", sizeof(install_status_msg));
+        return;
+    }
+
     // 1. Write Sector 0 (MBR 512 bytes from 0x7C00)
     strncpy(install_status_msg, "Writing MBR bootloader to Sector 0...", sizeof(install_status_msg));
     unsigned char mbr_buf[512];
     memcpy(mbr_buf, (const void *)0x7C00, 512);
-    // Clear live boot flag so disk boots into installed OS mode
-    mbr_buf[392] = 0;
-    ata_write_sector(0, mbr_buf);
+    int res = ata_write_sector(0, mbr_buf);
+    if (res != 0) {
+        strncpy(install_status_msg, "Error: Failed to write Sector 0 MBR!", sizeof(install_status_msg));
+        return;
+    }
     install_stage = 1;
     install_progress = 25;
 
     // 2. Write 32-bit Protected Mode Kernel to Sectors 1..256 (128 KB from 0x10000)
     strncpy(install_status_msg, "Writing Protected Mode Kernel to LBA 1..256...", sizeof(install_status_msg));
-    ata_write_sectors(1, 256, (const void *)0x10000);
+    res = ata_write_sectors(1, 256, (const void *)0x10000);
+    if (res != 0) {
+        strncpy(install_status_msg, "Error: Failed to write Kernel to sectors 1..256!", sizeof(install_status_msg));
+        return;
+    }
     install_stage = 2;
     install_progress = 55;
 
@@ -526,6 +546,7 @@ static void installer_on_click(window_t *win, int cx, int cy, int btn) {
         // Install button
         if (cx >= content_x + content_w - 160 && cx <= content_x + content_w &&
             cy >= btn_y && cy <= btn_y + 32) {
+            if (!ata_is_available()) return;
             current_step = 3; // Trigger installation
             install_progress = 5;
             install_stage = 0;
