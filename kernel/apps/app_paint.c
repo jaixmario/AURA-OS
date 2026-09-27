@@ -6,8 +6,8 @@
 #define CANVAS_H 280
 #define CANVAS_BG RGB(22, 24, 35)
 
-// Dedicated safe buffer in extended memory (6MB mark) - prevents stack collision
-static unsigned int * const paint_canvas = (unsigned int *)0x600000;
+// Dedicated safe buffer in extended memory (8MB mark) - completely isolated from 3MB wallpaper (0x500000-0x7FFFFF)
+static unsigned int * const paint_canvas = (unsigned int *)0x800000;
 
 static unsigned int active_color = COLOR_WHITE;
 static int active_tool = 1; // 0=1px (Pencil), 1=3px (Brush), 2=6px (Marker), 3=Eraser
@@ -261,6 +261,8 @@ static void paint_release(window_t *win, int rx, int ry, int btn) {
     last_y = -1;
 }
 
+static int paint_initialized = 0;
+
 void app_paint_launch(void) {
     window_t *win = wm_create_window("Canvas Paint", 200, 130, 512, 408, RGB(26, 27, 38));
     if (!win) return;
@@ -268,5 +270,8 @@ void app_paint_launch(void) {
     win->on_click = paint_click;
     win->on_drag = paint_drag;
     win->on_release = paint_release;
-    paint_clear();
+    if (!paint_initialized) {
+        paint_clear();
+        paint_initialized = 1;
+    }
 }

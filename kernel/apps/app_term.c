@@ -197,7 +197,8 @@ static void term_execute_command(void) {
         term_add_line("  Kernel Code : 0x00010000 (Flat Model)");
         term_add_line("  Kernel Stack: 0x001FFFF0 (1MB Ring 0 Stack)");
         term_add_line("  VRAM Buffer : 0x00200000 (3MB Double Buffer)");
-        term_add_line("  Paint Canvas: 0x00600000 (Extended RAM)");
+        term_add_line("  Wallpaper   : 0x00500000 (3MB Photographic Buffer)");
+        term_add_line("  Paint Canvas: 0x00800000 (Extended RAM)");
     } else if (strcmp(input_buf, "ver") == 0 || strcmp(input_buf, "version") == 0) {
         term_add_line("AuraOS Version 1.2.0 [i686 Protected Mode]");
     } else if (strcmp(input_buf, "date") == 0 || strcmp(input_buf, "time") == 0) {
