@@ -371,11 +371,11 @@ static void installer_perform_disk_write(void) {
     install_stage = 1;
     install_progress = 25;
 
-    // 2. Write 32-bit Protected Mode Kernel to Sectors 1..640 (320 KB from 0x10000)
-    strncpy(install_status_msg, "Writing Protected Mode Kernel to LBA 1..640...", sizeof(install_status_msg));
-    res = ata_write_sectors(1, 640, (const void *)0x10000);
+    // 2. Write 32-bit Protected Mode Kernel to Sectors 1..960 (480 KB from 0x10000)
+    strncpy(install_status_msg, "Writing Protected Mode Kernel to LBA 1..960...", sizeof(install_status_msg));
+    res = ata_write_sectors(1, 960, (const void *)0x10000);
     if (res != 0) {
-        strncpy(install_status_msg, "Error: Failed to write Kernel to sectors 1..640!", sizeof(install_status_msg));
+        strncpy(install_status_msg, "Error: Failed to write Kernel to sectors 1..960!", sizeof(install_status_msg));
         return;
     }
     install_stage = 2;
@@ -397,9 +397,9 @@ static void installer_perform_disk_write(void) {
         vfs_create_file("USER.CFG", "System", user_cfg, strlen(user_cfg), FS_ATTR_SYSTEM);
     }
 
-    char sys_cfg[300];
+    char sys_cfg[400];
     snprintf(sys_cfg, sizeof(sys_cfg),
-             "# AuraOS Desktop Configuration\n[STORAGE]\nDRIVER=ATA_PIO\nPRIMARY_BUS=0x1F0\nLBA_OFFSET=512\nINSTALLED=TRUE\n[SYSTEM]\nHOSTNAME=%s\nUSER=%s\n",
+             "# AuraOS Desktop Configuration\n[STORAGE]\nDRIVER=ATA_PIO\nPRIMARY_BUS=0x1F0\nLBA_OFFSET=1000\nINSTALLED=TRUE\n[SYSTEM]\nHOSTNAME=%s\nUSER=%s\n[DESKTOP]\nWALLPAPER=0\nTHEME=0\nMOUSE_SPEED=1\n",
              in_hostname, in_username);
 
     if (vfs_find("SYSTEM.CFG")) {

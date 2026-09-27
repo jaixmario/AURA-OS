@@ -149,17 +149,139 @@ static void load_user_profile(void) {
             g_password[len] = '\0';
         }
     }
+}
 
-    vfs_file_t *sys = vfs_find("SYSTEM.CFG");
-    if (sys && sys->size > 0) {
-        char *th = strstr(sys->data, "THEME=");
-        if (!th) th = strstr(sys->data, "WALLPAPER=");
-        if (th) {
-            int t = th[6] - '0';
-            if (t >= 0 && t < wallpaper_get_count()) {
-                wallpaper_set(t);
+void sys_set_setting(const char *key, const char *value) {
+    if (!key || !value) return;
+
+    vfs_file_t *cfg = vfs_find("SYSTEM.CFG");
+    char new_buf[VFS_MAX_FILESIZE];
+    memset(new_buf, 0, sizeof(new_buf));
+
+    char key_prefix[64];
+    snprintf(key_prefix, sizeof(key_prefix), "%s=", key);
+    int key_len = strlen(key_prefix);
+
+    if (cfg && cfg->size > 0) {
+        const char *src = cfg->data;
+        char *dst = new_buf;
+        int found = 0;
+
+        while (*src) {
+            const char *line_end = src;
+            while (*line_end && *line_end != '\n') line_end++;
+
+            int line_len = line_end - src;
+            while (line_len > 0 && (src[line_len - 1] == '\r' || src[line_len - 1] == ' ')) {
+                line_len--;
             }
+
+            if (strncmp(src, key_prefix, key_len) == 0) {
+                dst += snprintf(dst, sizeof(new_buf) - (dst - new_buf), "%s=%s\n", key, value);
+                found = 1;
+            } else {
+                if (line_len > 0 && (dst - new_buf + line_len + 1 < (int)sizeof(new_buf))) {
+                    memcpy(dst, src, line_len);
+                    dst += line_len;
+                    *dst++ = '\n';
+                }
+            }
+
+            src = (*line_end == '\n') ? line_end + 1 : line_end;
         }
+
+        if (!found) {
+            snprintf(dst, sizeof(new_buf) - (dst - new_buf), "%s=%s\n", key, value);
+        }
+
+        vfs_write_file("SYSTEM.CFG", new_buf, strlen(new_buf));
+    } else {
+        snprintf(new_buf, sizeof(new_buf),
+                 "# AuraOS Desktop Configuration\n[STORAGE]\nDRIVER=ATA_PIO\n%s=%s\n",
+                 key, value);
+        vfs_create_file("SYSTEM.CFG", "System", new_buf, strlen(new_buf), FS_ATTR_SYSTEM);
+    }
+
+    vfs_sync_disk();
+}
+
+void sys_set_setting_int(const char *key, int value) {
+    char val_str[16];
+    snprintf(val_str, sizeof(val_str), "%d", value);
+    sys_set_setting(key, val_str);
+}
+
+int sys_get_setting_int(const char *key, int default_val) {
+    vfs_file_t *cfg = vfs_find("SYSTEM.CFG");
+    if (!cfg || cfg->size == 0) return default_val;
+
+    char key_prefix[64];
+    snprintf(key_prefix, sizeof(key_prefix), "%s=", key);
+    int key_len = strlen(key_prefix);
+
+    const char *p = cfg->data;
+    while (*p) {
+        while (*p == '\r' || *p == '\n') p++;
+        if (!*p) break;
+        if (strncmp(p, key_prefix, key_len) == 0) {
+            p += key_len;
+            while (*p == ' ' || *p == '\t') p++;
+            int val = 0;
+            int neg = 0;
+            if (*p == '-') { neg = 1; p++; }
+            while (*p >= '0' && *p <= '9') {
+                val = val * 10 + (*p - '0');
+                p++;
+            }
+            return neg ? -val : val;
+        }
+        while (*p && *p != '\n') p++;
+    }
+    return default_val;
+}
+
+const char *sys_get_setting(const char *key, char *out_buf, int max_len) {
+    if (!out_buf || max_len <= 0) return "";
+    out_buf[0] = '\0';
+
+    vfs_file_t *cfg = vfs_find("SYSTEM.CFG");
+    if (!cfg || cfg->size == 0) return "";
+
+    char key_prefix[64];
+    snprintf(key_prefix, sizeof(key_prefix), "%s=", key);
+    int key_len = strlen(key_prefix);
+
+    const char *p = cfg->data;
+    while (*p) {
+        while (*p == '\r' || *p == '\n') p++;
+        if (!*p) break;
+        if (strncmp(p, key_prefix, key_len) == 0) {
+            p += key_len;
+            while (*p == ' ' || *p == '\t') p++;
+            int len = 0;
+            while (p[len] && p[len] != '\r' && p[len] != '\n' && len < max_len - 1) {
+                out_buf[len] = p[len];
+                len++;
+            }
+            out_buf[len] = '\0';
+            return out_buf;
+        }
+        while (*p && *p != '\n') p++;
+    }
+    return "";
+}
+
+static void load_system_settings(void) {
+    // 1. Restore Saved Wallpaper
+    int saved_wp = sys_get_setting_int("WALLPAPER", -1);
+    if (saved_wp < 0) saved_wp = sys_get_setting_int("THEME", 0);
+    if (saved_wp < 0 || saved_wp >= wallpaper_get_count()) saved_wp = 0;
+    wallpaper_set(saved_wp);
+
+    // 2. Restore Saved Mouse Speed
+    int saved_spd = sys_get_setting_int("MOUSE_SPEED", 1);
+    if (saved_spd >= 0 && saved_spd <= 2) {
+        mouse_set_speed(saved_spd);
     }
 }
 
@@ -178,15 +300,8 @@ const char *get_theme_desc(int theme) {
 void set_desktop_theme(int theme) {
     if (theme >= 0 && theme < wallpaper_get_count()) {
         wallpaper_set(theme);
-        vfs_file_t *cfg = vfs_find("SYSTEM.CFG");
-        if (cfg && cfg->size > 0) {
-            char *th = strstr(cfg->data, "THEME=");
-            if (!th) th = strstr(cfg->data, "WALLPAPER=");
-            if (th) {
-                th[6] = '0' + theme;
-                vfs_write_file("SYSTEM.CFG", cfg->data, cfg->size);
-            }
-        }
+        sys_set_setting_int("WALLPAPER", theme);
+        sys_set_setting_int("THEME", theme);
     }
 }
 
@@ -807,6 +922,9 @@ void kernel_main(boot_info_t *bi) {
 
     // Initialize Real Photographic Wallpaper Engine
     wallpaper_init();
+
+    // Load persistent system settings (saved wallpaper, mouse speed, etc.)
+    load_system_settings();
 
     // 8. Initialize Window Manager
     wm_init();

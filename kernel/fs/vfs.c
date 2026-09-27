@@ -2,13 +2,14 @@
 #include "../libc/string.h"
 #include "../arch/rtc.h"
 #include "../arch/ata.h"
+#include "../arch/io.h"
 
 #define ATA_FS_MAGIC         0x41555241 // 'AURA'
 #define ATA_FS_VERSION       1
-#define ATA_FS_SUPER_LBA     800
+#define ATA_FS_SUPER_LBA     1000
 #define ATA_FS_SUPER_SECTORS 8
 #define ATA_SECTORS_PER_FILE 4
-#define ATA_FS_DATA_LBA      808
+#define ATA_FS_DATA_LBA      1008
 
 typedef struct {
     char name[VFS_MAX_FILENAME];
@@ -56,7 +57,7 @@ static const char *default_cfg =
     "[STORAGE]\n"
     "DRIVER=ATA_PIO\n"
     "PRIMARY_BUS=0x1F0\n"
-    "LBA_OFFSET=512\n"
+    "LBA_OFFSET=1000\n"
     "MAX_FILES=32\n\n"
     "[DISPLAY]\n"
     "WIDTH=1024\n"
@@ -66,7 +67,11 @@ static const char *default_cfg =
     "DOUBLE_BUFFER=ENABLED\n\n"
     "[INPUT]\n"
     "MOUSE_RATE=200\n"
-    "KEYBOARD_LAYOUT=US_QWERTY\n";
+    "MOUSE_SPEED=1\n"
+    "KEYBOARD_LAYOUT=US_QWERTY\n\n"
+    "[DESKTOP]\n"
+    "WALLPAPER=0\n"
+    "THEME=0\n";
 
 static const char *default_notes =
     "✦ AuraOS Notes & Documents\n"
@@ -125,8 +130,11 @@ int vfs_sync_disk(void) {
         ata_write_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, sec_buf);
     }
 
-    // Write superblock (8 sectors at LBA 512)
+    // Write superblock (8 sectors at LBA 1000)
     ata_write_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &disk_sb);
+
+    // Hardware ATA Cache Flush to physically commit sectors before reboot
+    outb(ATA_COMMAND_PORT, ATA_CMD_CACHE_FLUSH);
     return 0;
 }
 

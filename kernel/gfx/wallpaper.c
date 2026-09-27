@@ -126,7 +126,6 @@ static void wallpaper_decode_current(void) {
 
 void wallpaper_init(void) {
     g_loaded_wallpaper = -1;
-    wallpaper_decode_current();
 }
 
 int wallpaper_get_count(void) {

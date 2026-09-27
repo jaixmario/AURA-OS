@@ -70,7 +70,8 @@ static void settings_draw(window_t *win) {
         int cur_theme = get_desktop_theme();
         int col_w = (cw - 12) / 2;
 
-        for (int i = 0; i < 6; i++) {
+        int count = wallpaper_get_count();
+        for (int i = 0; i < count; i++) {
             int col = i / 3;
             int row = i % 3;
             int bx = cx + (col * (col_w + 12));
@@ -301,7 +302,8 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
 
     if (active_tab == 0) {
         int col_w = (cw - 12) / 2;
-        for (int i = 0; i < 6; i++) {
+        int count = wallpaper_get_count();
+        for (int i = 0; i < count; i++) {
             int col = i / 3;
             int row = i % 3;
             int bx = cx + (col * (col_w + 12));
@@ -356,6 +358,7 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
             int by = 66 + (i * 58);
             if (rx >= cx && rx <= cx + cw && ry >= by && ry <= by + 48) {
                 mouse_set_speed(i);
+                sys_set_setting_int("MOUSE_SPEED", i);
                 return;
             }
         }

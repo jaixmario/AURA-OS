@@ -36,4 +36,10 @@ int  get_theme_count(void);
 const char *get_theme_name(int theme);
 const char *get_theme_desc(int theme);
 
+// Persistent System Configuration
+void sys_set_setting(const char *key, const char *value);
+void sys_set_setting_int(const char *key, int value);
+int  sys_get_setting_int(const char *key, int default_val);
+const char *sys_get_setting(const char *key, char *out_buf, int max_len);
+
 #endif

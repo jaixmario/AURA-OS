@@ -240,25 +240,29 @@ static void term_execute_command(void) {
         term_add_line("Locking desktop...");
         sys_lock_screen();
     } else if (strcmp(input_buf, "wallpapers") == 0 || strcmp(input_buf, "themes") == 0) {
-        term_add_line("High-Res Photographic Wallpapers (0-5):");
+        char hdr[64];
+        snprintf(hdr, sizeof(hdr), "Native 1024x768 Photographic Wallpapers (0-%d):", get_theme_count() - 1);
+        term_add_line(hdr);
         for (int i = 0; i < get_theme_count(); i++) {
             char tmsg[64];
             snprintf(tmsg, sizeof(tmsg), "  [%d] %-18s - %s", i, get_theme_name(i), get_theme_desc(i));
             term_add_line(tmsg);
         }
-        term_add_line("Type 'theme <0-5>' or 'wallpaper <0-5>' to apply.");
+        term_add_line("Type 'theme <id>' or 'wallpaper <id>' to apply.");
     } else if (strncmp(input_buf, "theme ", 6) == 0 || strncmp(input_buf, "wallpaper ", 10) == 0) {
         const char *arg = input_buf;
         while (*arg && *arg != ' ') arg++;
         while (*arg == ' ') arg++;
-        if (*arg >= '0' && *arg <= '5') {
+        if (*arg >= '0' && *arg < '0' + get_theme_count()) {
             int t = *arg - '0';
             set_desktop_theme(t);
             char tmsg[64];
-            snprintf(tmsg, sizeof(tmsg), "Applied wallpaper: [%d] %s", t, get_theme_name(t));
+            snprintf(tmsg, sizeof(tmsg), "Applied wallpaper: [%d] %s (Saved)", t, get_theme_name(t));
             term_add_line(tmsg);
         } else {
-            term_add_line("Usage: theme <0-5>  (type 'wallpapers' to list)");
+            char umsg[64];
+            snprintf(umsg, sizeof(umsg), "Usage: theme <0-%d>  (type 'wallpapers' to list)", get_theme_count() - 1);
+            term_add_line(umsg);
         }
     } else if (strcmp(input_buf, "about") == 0) {
         term_add_line("AuraOS - Built from scratch with C and Assembly");

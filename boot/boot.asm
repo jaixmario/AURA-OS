@@ -24,7 +24,7 @@ start:
     int 0x13
 
     mov si, dap
-    mov bp, 10                 ; 10 chunks of 64 sectors = 640 sectors (320 KB)
+    mov bp, 15                 ; 15 chunks of 64 sectors = 960 sectors (480 KB)
 .read_loop:
     mov dl, [boot_drive]
     mov ah, 0x42
@@ -173,12 +173,12 @@ pm_start:
     mov ss, ax
     mov esp, 0x1FFFF0
 
-    ; If CD-ROM boot, copy 320KB kernel backwards from 0x7E00 to 0x10000
+    ; If CD-ROM boot, copy 480KB kernel backwards from 0x7E00 to 0x10000
     cmp byte [0x700F], 1
     jne .jump_kernel
-    mov esi, 0x7E00 + 327680 - 4
-    mov edi, 0x10000 + 327680 - 4
-    mov ecx, 81920
+    mov esi, 0x7E00 + 491520 - 4
+    mov edi, 0x10000 + 491520 - 4
+    mov ecx, 122880
     std
     rep movsd
     cld
