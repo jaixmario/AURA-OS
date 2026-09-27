@@ -60,6 +60,9 @@ static void term_execute_command(void) {
         term_add_line("  mem      - inspect memory regions");
         term_add_line("  uptime   - show system uptime");
         term_add_line("  whoami   - show user and hostname");
+        term_add_line("  lock     - lock desktop and show login screen");
+        term_add_line("  wallpapers- list all 8 desktop wallpapers");
+        term_add_line("  theme <n>- set desktop wallpaper (0-7)");
         if (!sys_is_installed()) {
             term_add_line("  install  - launch AuraOS installer");
         }
@@ -233,6 +236,30 @@ static void term_execute_command(void) {
                  sys_get_username(), sys_get_hostname(),
                  sys_is_installed() ? "Installed" : "Live Media");
         term_add_line(msg);
+    } else if (strcmp(input_buf, "lock") == 0) {
+        term_add_line("Locking desktop...");
+        sys_lock_screen();
+    } else if (strcmp(input_buf, "wallpapers") == 0 || strcmp(input_buf, "themes") == 0) {
+        term_add_line("Available Desktop Wallpapers (0-7):");
+        for (int i = 0; i < get_theme_count(); i++) {
+            char tmsg[64];
+            snprintf(tmsg, sizeof(tmsg), "  [%d] %-16s - %s", i, get_theme_name(i), get_theme_desc(i));
+            term_add_line(tmsg);
+        }
+        term_add_line("Type 'theme <0-7>' or 'wallpaper <0-7>' to apply.");
+    } else if (strncmp(input_buf, "theme ", 6) == 0 || strncmp(input_buf, "wallpaper ", 10) == 0) {
+        const char *arg = input_buf;
+        while (*arg && *arg != ' ') arg++;
+        while (*arg == ' ') arg++;
+        if (*arg >= '0' && *arg <= '7') {
+            int t = *arg - '0';
+            set_desktop_theme(t);
+            char tmsg[64];
+            snprintf(tmsg, sizeof(tmsg), "Applied wallpaper: [%d] %s", t, get_theme_name(t));
+            term_add_line(tmsg);
+        } else {
+            term_add_line("Usage: theme <0-7>  (type 'wallpapers' to list)");
+        }
     } else if (strcmp(input_buf, "about") == 0) {
         term_add_line("AuraOS - Built from scratch with C and Assembly");
         term_add_line("Custom Bare-Metal Graphical Operating System");

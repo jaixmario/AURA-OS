@@ -16,20 +16,6 @@ static const char *tab_names[5] = {
     "About System"
 };
 
-static const char *theme_names[4] = {
-    "Deep Nebula",
-    "Midnight Dark",
-    "Cyberpunk",
-    "Emerald Forest"
-};
-
-static const char *theme_descs[4] = {
-    "Rich cosmic purple & deep navy gradient",
-    "Minimalist dark slate & obsidian",
-    "Vibrant dark violet & deep blue tones",
-    "Earthy deep emerald & teal forest palette"
-};
-
 static const char *speed_names[3] = {
     "Slow (1.0x)",
     "Normal (1.5x)",
@@ -77,30 +63,42 @@ static void settings_draw(window_t *win) {
 
     if (active_tab == 0) {
         // Tab 0: Themes & Personalization
-        gfx_draw_string(cx, cy, "Desktop Wallpaper Themes", COLOR_WHITE, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, cy + 20, "Select background color palette and gradient:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy, "Desktop Wallpapers & Themes", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy + 18, "Select a background wallpaper style and color palette:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
         int cur_theme = get_desktop_theme();
+        int col_w = (cw - 12) / 2;
 
-        for (int i = 0; i < 4; i++) {
-            int by = cy + 50 + (i * 58);
+        for (int i = 0; i < 8; i++) {
+            int col = i / 4;
+            int row = i % 4;
+            int bx = cx + (col * (col_w + 12));
+            int by = cy + 44 + (row * 62);
             int is_sel = (cur_theme == i);
 
-            gfx_fillrect(cx, by, cw, 48, is_sel ? RGB(36, 40, 60) : RGB(28, 30, 44));
-            gfx_drawrect(cx, by, cw, 48, is_sel ? COLOR_ACCENT : COLOR_BORDER);
+            gfx_fillrect(bx, by, col_w, 54, is_sel ? RGB(36, 40, 60) : RGB(26, 28, 40));
+            gfx_drawrect(bx, by, col_w, 54, is_sel ? COLOR_ACCENT : COLOR_BORDER);
+
+            unsigned int sw_col = (i == 0) ? RGB(160, 120, 240) :
+                                  (i == 1) ? RGB(90, 100, 120) :
+                                  (i == 2) ? RGB(245, 120, 180) :
+                                  (i == 3) ? RGB(40, 180, 120) :
+                                  (i == 4) ? RGB(245, 140, 60) :
+                                  (i == 5) ? RGB(40, 220, 80) :
+                                  (i == 6) ? RGB(120, 200, 245) : RGB(245, 200, 60);
 
             if (is_sel) {
-                gfx_fill_circle(cx + 18, by + 24, 7, COLOR_ACCENT);
-                gfx_fill_circle(cx + 18, by + 24, 3, RGB(17, 17, 27));
+                gfx_fill_circle(bx + 16, by + 27, 8, sw_col);
+                gfx_fill_circle(bx + 16, by + 27, 3, RGB(17, 17, 27));
             } else {
-                gfx_draw_circle(cx + 18, by + 24, 7, COLOR_BORDER);
+                gfx_fill_circle(bx + 16, by + 27, 7, sw_col);
             }
 
-            gfx_draw_string(cx + 36, by + 10, theme_names[i], is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
-            gfx_draw_string(cx + 36, by + 28, theme_descs[i], COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+            gfx_draw_string(bx + 30, by + 11, get_theme_name(i), is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+            gfx_draw_string(bx + 30, by + 30, get_theme_desc(i), COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
             if (is_sel) {
-                gfx_draw_string(cx + cw - 70, by + 16, "[Active]", COLOR_ACCENT, COLOR_TRANSPARENT);
+                gfx_draw_string(bx + col_w - 56, by + 11, "[OK]", COLOR_ACCENT, COLOR_TRANSPARENT);
             }
         }
     } else if (active_tab == 1) {
@@ -307,10 +305,13 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
     int cw = win->width - sb_w - 32;
 
     if (active_tab == 0) {
-        // Theme buttons
-        for (int i = 0; i < 4; i++) {
-            int by = 66 + (i * 58);
-            if (rx >= cx && rx <= cx + cw && ry >= by && ry <= by + 48) {
+        int col_w = (cw - 12) / 2;
+        for (int i = 0; i < 8; i++) {
+            int col = i / 4;
+            int row = i % 4;
+            int bx = cx + (col * (col_w + 12));
+            int by = 60 + (row * 62);
+            if (rx >= bx && rx <= bx + col_w && ry >= by && ry <= by + 54) {
                 set_desktop_theme(i);
                 return;
             }

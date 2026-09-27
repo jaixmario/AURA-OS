@@ -4,6 +4,7 @@
 #include "arch/kbd.h"
 #include "arch/mouse.h"
 #include "arch/rtc.h"
+#include "arch/io.h"
 #include "fs/vfs.h"
 #include "gfx/gfx.h"
 #include "wm/wm.h"
@@ -12,9 +13,13 @@
 
 static int start_menu_open = 0;
 static boot_info_t *g_boot_info = 0;
-static int current_theme = 0; // 0=Nebula, 1=Midnight, 2=Cyberpunk, 3=Emerald
+static int current_theme = 0; // 0..7
 
 static int g_system_installed = 0;
+static int g_logged_in = 1;   // 1 = logged in, 0 = locked / login screen
+static char login_input[32] = "";
+static int login_error = 0;
+
 static char g_fullname[32] = "Aura User";
 static char g_username[32] = "aura";
 static char g_hostname[32] = "aura-pc";
@@ -26,6 +31,27 @@ int sys_is_installed(void) {
 
 void sys_set_installed(int installed) {
     g_system_installed = installed;
+}
+
+int sys_is_logged_in(void) {
+    return g_logged_in;
+}
+
+void sys_set_logged_in(int logged_in) {
+    g_logged_in = logged_in;
+    if (!logged_in) {
+        login_input[0] = '\0';
+        login_error = 0;
+    }
+}
+
+int sys_verify_password(const char *pw) {
+    if (!pw) return 0;
+    return (strcmp(g_password, pw) == 0);
+}
+
+void sys_lock_screen(void) {
+    sys_set_logged_in(0);
 }
 
 const char *sys_get_fullname(void) {
@@ -67,6 +93,7 @@ static void load_user_profile(void) {
     if (inst) {
         if (g_boot_info && g_boot_info->is_live_media == 0) {
             g_system_installed = 1;
+            g_logged_in = 0; // Lock on boot for installed systems!
         }
     }
 
@@ -108,10 +135,82 @@ static void load_user_profile(void) {
             g_hostname[len] = '\0';
         }
     }
+
+    char *pass_line = strstr(f->data, "PASSWORD=");
+    if (pass_line) {
+        pass_line += 9;
+        int len = 0;
+        while (pass_line[len] && pass_line[len] != '\r' && pass_line[len] != '\n' && len < (int)sizeof(g_password) - 1) {
+            len++;
+        }
+        if (len > 0) {
+            strncpy(g_password, pass_line, len);
+            g_password[len] = '\0';
+        }
+    }
+
+    vfs_file_t *sys = vfs_find("SYSTEM.CFG");
+    if (sys && sys->size > 0) {
+        char *th = strstr(sys->data, "THEME=");
+        if (th) {
+            int t = th[6] - '0';
+            if (t >= 0 && t < 8) {
+                current_theme = t;
+            }
+        }
+    }
+}
+
+#define THEME_COUNT 8
+
+static const char *g_theme_names[THEME_COUNT] = {
+    "Deep Nebula",
+    "Midnight Slate",
+    "Cyberpunk Neon",
+    "Emerald Forest",
+    "Sunset Dunes",
+    "Matrix Cyber",
+    "Nordic Frost",
+    "Solar Flare"
+};
+
+static const char *g_theme_descs[THEME_COUNT] = {
+    "Cosmic violet & starry sky",
+    "Minimalist stealth obsidian",
+    "Synthwave sunset & grid",
+    "Pine green woodland & peaks",
+    "Warm crimson & amber glow",
+    "Terminal black & data stream",
+    "Glacial midnight & ice peaks",
+    "Obsidian & radiant solar gold"
+};
+
+int get_theme_count(void) {
+    return THEME_COUNT;
+}
+
+const char *get_theme_name(int theme) {
+    if (theme >= 0 && theme < THEME_COUNT) return g_theme_names[theme];
+    return "Unknown";
+}
+
+const char *get_theme_desc(int theme) {
+    if (theme >= 0 && theme < THEME_COUNT) return g_theme_descs[theme];
+    return "";
 }
 
 void set_desktop_theme(int theme) {
-    if (theme >= 0 && theme <= 3) current_theme = theme;
+    if (theme >= 0 && theme < THEME_COUNT) {
+        current_theme = theme;
+        vfs_file_t *cfg = vfs_find("SYSTEM.CFG");
+        if (cfg && cfg->size > 0) {
+            char *th = strstr(cfg->data, "THEME=");
+            if (th) {
+                th[6] = '0' + theme;
+                vfs_write_file("SYSTEM.CFG", cfg->data, cfg->size);
+            }
+        }
+    }
 }
 
 int get_desktop_theme(void) {
@@ -130,31 +229,168 @@ static void draw_wallpaper(void) {
     unsigned int bot_col = RGB(34, 37, 56);
     unsigned int accent_grid = RGB(48, 52, 78);
 
-    if (current_theme == 1) { // Midnight Dark
-        top_col = RGB(14, 16, 24);
-        bot_col = RGB(22, 26, 38);
-        accent_grid = RGB(34, 38, 56);
-    } else if (current_theme == 2) { // Cyberpunk
-        top_col = RGB(32, 16, 42);
-        bot_col = RGB(16, 28, 52);
-        accent_grid = RGB(55, 30, 72);
+    if (current_theme == 0) { // Deep Nebula
+        top_col = RGB(16, 12, 32);
+        bot_col = RGB(32, 26, 54);
+        accent_grid = RGB(65, 55, 95);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        // Starfield (deterministic stars using hash)
+        for (int i = 0; i < 70; i++) {
+            int sx = ((i * 137 + 43) * 19) % w;
+            int sy = ((i * 223 + 17) * 23) % (h - 220);
+            unsigned int star_col = (i % 3 == 0) ? RGB(255, 255, 255) :
+                                    (i % 3 == 1) ? RGB(180, 190, 255) : RGB(220, 160, 255);
+            gfx_putpixel(sx, sy, star_col);
+            if (i % 7 == 0) {
+                gfx_putpixel(sx + 1, sy, star_col);
+                gfx_putpixel(sx, sy + 1, star_col);
+            }
+        }
+        // Horizon glow
+        for (int y = h - 180; y < h - 48; y += 22) {
+            int dy = y - (h - 180);
+            gfx_draw_line(0, y, w, y, RGB(38 + dy / 8, 32 + dy / 8, 70 + dy / 4));
+        }
+
+    } else if (current_theme == 1) { // Midnight Slate
+        top_col = RGB(10, 12, 18);
+        bot_col = RGB(22, 26, 36);
+        accent_grid = RGB(38, 44, 62);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        // Minimalist fine grid dots
+        for (int gy = 40; gy < h - 60; gy += 48) {
+            for (int gx = 40; gx < w; gx += 48) {
+                gfx_putpixel(gx, gy, RGB(45, 52, 72));
+            }
+        }
+        gfx_draw_line(0, h - 140, w, h - 140, RGB(28, 34, 48));
+
+    } else if (current_theme == 2) { // Cyberpunk Neon
+        top_col = RGB(36, 12, 46);
+        bot_col = RGB(14, 20, 48);
+        accent_grid = RGB(85, 30, 95);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        // Synthwave Sun on horizon
+        int sun_cx = w / 2;
+        int sun_cy = h - 160;
+        for (int r = 70; r > 0; r -= 4) {
+            int glow = (70 - r) * 2;
+            unsigned int c = RGB(245, 120 + glow / 2, 80 + glow / 3);
+            gfx_draw_circle(sun_cx, sun_cy, r, c);
+        }
+
+        // Perspective grid lines on floor
+        int horizon_y = h - 150;
+        gfx_draw_line(0, horizon_y, w, horizon_y, RGB(245, 120, 180));
+        for (int y = horizon_y + 12; y < h - 48; y += (y - horizon_y) / 2 + 8) {
+            gfx_draw_line(0, y, w, y, RGB(180, 50, 140));
+        }
+        for (int gx = 0; gx <= w; gx += 70) {
+            gfx_draw_line(sun_cx, horizon_y, gx, h - 48, RGB(80, 40, 110));
+        }
+
     } else if (current_theme == 3) { // Emerald Forest
-        top_col = RGB(14, 28, 24);
-        bot_col = RGB(20, 44, 38);
-        accent_grid = RGB(28, 55, 45);
-    }
+        top_col = RGB(10, 24, 20);
+        bot_col = RGB(18, 48, 38);
+        accent_grid = RGB(30, 68, 54);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
 
-    gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+        // Mountain ridge silhouettes
+        int my0 = h - 220;
+        for (int x = 0; x < w; x++) {
+            int peak1 = my0 + ((x * 37) % 70) - 35;
+            int peak2 = my0 + 40 + ((x * 53 + 120) % 50) - 25;
+            if (x % 3 == 0) {
+                gfx_draw_line(x, peak1, x, h - 48, RGB(14, 34, 28));
+                gfx_draw_line(x, peak2, x, h - 48, RGB(20, 50, 40));
+            }
+        }
+        for (int y = h - 140; y < h - 48; y += 18) {
+            int dy = y - (h - 140);
+            gfx_draw_line(0, y, w, y, RGB(22 + dy / 6, 58 + dy / 4, 46 + dy / 6));
+        }
 
-    // Subtle geometric horizon accent lines
-    for (int y = h - 200; y < h - 48; y += 24) {
-        int alpha_y = (y - (h - 200));
-        unsigned int line_col = RGB(
-            ((top_col >> 16) & 0xFF) + alpha_y / 10,
-            ((top_col >> 8) & 0xFF) + alpha_y / 8,
-            (top_col & 0xFF) + alpha_y / 6
-        );
-        gfx_draw_line(0, y, w, y, line_col);
+    } else if (current_theme == 4) { // Sunset Dunes
+        top_col = RGB(46, 16, 32);
+        bot_col = RGB(68, 32, 22);
+        accent_grid = RGB(105, 50, 40);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        // Golden sunset aura
+        int sun_x = w - 240;
+        int sun_y = h - 200;
+        for (int r = 60; r > 0; r -= 3) {
+            unsigned int c = RGB(250, 160 + (60 - r), 60);
+            gfx_draw_circle(sun_x, sun_y, r, c);
+        }
+
+        // Curved sand dunes lines
+        for (int x = 0; x < w; x += 2) {
+            int dune_y1 = (h - 170) + ((x * 10) % 40);
+            int dune_y2 = (h - 120) + (((w - x) * 14) % 35);
+            gfx_draw_line(x, dune_y1, x, h - 48, RGB(60, 26, 20));
+            gfx_draw_line(x, dune_y2, x, h - 48, RGB(74, 36, 22));
+        }
+
+    } else if (current_theme == 5) { // Matrix Cyber
+        top_col = RGB(6, 10, 8);
+        bot_col = RGB(12, 20, 16);
+        accent_grid = RGB(20, 70, 40);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        // Matrix digital stream columns
+        for (int col = 20; col < w; col += 36) {
+            int start_y = ((col * 17) % 200);
+            int len = 80 + ((col * 31) % 120);
+            for (int y = start_y; y < start_y + len && y < h - 48; y += 16) {
+                unsigned int c = (y > start_y + len - 20) ? RGB(160, 255, 180) :
+                                 (y > start_y + len - 50) ? RGB(50, 200, 90) : RGB(20, 100, 40);
+                gfx_draw_char(col, y, '0' + ((col + y) % 10), c, COLOR_TRANSPARENT);
+            }
+        }
+        gfx_draw_line(0, h - 90, w, h - 90, RGB(20, 120, 60));
+
+    } else if (current_theme == 6) { // Nordic Frost
+        top_col = RGB(12, 22, 38);
+        bot_col = RGB(26, 48, 72);
+        accent_grid = RGB(60, 95, 130);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        // Glacial peaks
+        for (int x = 0; x < w; x += 4) {
+            int peak = (h - 200) + ((x * 47) % 65) - 30;
+            gfx_draw_line(x, peak, x, h - 48, RGB(20, 40, 62));
+            gfx_putpixel(x, peak, RGB(220, 240, 255));
+        }
+        for (int y = h - 150; y < h - 48; y += 20) {
+            int dy = y - (h - 150);
+            gfx_draw_line(0, y, w, y, RGB(30 + dy / 5, 55 + dy / 4, 80 + dy / 3));
+        }
+
+    } else { // Solar Flare (Theme 7)
+        top_col = RGB(18, 16, 18);
+        bot_col = RGB(36, 28, 18);
+        accent_grid = RGB(85, 65, 30);
+        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
+
+        int flare_x = 180;
+        int flare_y = h - 180;
+        for (int r = 80; r > 0; r -= 4) {
+            unsigned int c = RGB(255, 180 + (80 - r) / 2, 40);
+            gfx_draw_circle(flare_x, flare_y, r, c);
+        }
+        for (int deg = 0; deg < 12; deg++) {
+            int rx = flare_x + deg * 25;
+            int ry = flare_y - deg * 15;
+            gfx_draw_line(flare_x, flare_y, rx, ry, RGB(90, 70, 30));
+        }
+        for (int y = h - 130; y < h - 48; y += 20) {
+            int dy = y - (h - 130);
+            gfx_draw_line(0, y, w, y, RGB(45 + dy / 5, 35 + dy / 6, 20 + dy / 8));
+        }
     }
 
     // Centered Desktop Brand Watermark
@@ -347,8 +583,8 @@ static void draw_start_menu(void) {
     int menu_x = 8;
     int menu_w = 210;
     int is_inst = sys_is_installed();
-    int num_items = is_inst ? 7 : 8;
-    int menu_h = is_inst ? 324 : 362;
+    int num_items = 8;
+    int menu_h = 362;
     int menu_y = h - 48 - menu_h - 8;
 
     // Drop shadow
@@ -375,6 +611,9 @@ static void draw_start_menu(void) {
     items[idx++] = "> 5. Notes Editor";
     items[idx++] = "> 6. Settings Panel";
     items[idx++] = "> 7. System Info";
+    if (is_inst) {
+        items[idx++] = "* 8. Lock Screen";
+    }
 
     int mx = mouse_get_x();
     int my = mouse_get_y();
@@ -389,7 +628,7 @@ static void draw_start_menu(void) {
             gfx_drawrect(menu_x + 6, item_y, menu_w - 12, 32, COLOR_ACCENT);
         }
 
-        unsigned int fg = is_hover ? COLOR_WHITE : ((!is_inst && i == 0) ? COLOR_ACCENT : COLOR_TEXT);
+        unsigned int fg = is_hover ? COLOR_WHITE : ((!is_inst && i == 0) ? COLOR_ACCENT : (is_inst && i == 7) ? COLOR_YELLOW : COLOR_TEXT);
         gfx_draw_string(menu_x + 16, item_y + 8, items[i], fg, COLOR_TRANSPARENT);
     }
 }
@@ -410,8 +649,8 @@ static void handle_desktop_click(int mx, int my) {
         int menu_x = 8;
         int menu_w = 210;
         int is_inst = sys_is_installed();
-        int num_items = is_inst ? 7 : 8;
-        int menu_h = is_inst ? 324 : 362;
+        int num_items = 8;
+        int menu_h = 362;
         int menu_y = h - 48 - menu_h - 8;
 
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y && my <= menu_y + menu_h) {
@@ -435,6 +674,7 @@ static void handle_desktop_click(int mx, int my) {
                         else if (i == 4) app_notes_launch();
                         else if (i == 5) app_settings_launch();
                         else if (i == 6) app_sysinfo_launch();
+                        else if (i == 7) sys_lock_screen();
                     }
                     start_menu_open = 0;
                     return;
@@ -532,6 +772,194 @@ static void handle_desktop_click(int mx, int my) {
     }
 }
 
+static void draw_login_screen(void) {
+    int w = gfx_get_width();
+    int h = gfx_get_height();
+
+    // 1. Wallpaper background
+    draw_wallpaper();
+
+    // 2. Dimmed lockscreen backdrop overlay
+    for (int y = 0; y < h; y += 2) {
+        gfx_draw_line(0, y, w, y, RGB(10, 12, 20));
+    }
+
+    // 3. Top Clock & Date
+    char time_str[32];
+    rtc_get_time_string(time_str, sizeof(time_str));
+    char date_str[48];
+    rtc_get_date_string(date_str, sizeof(date_str));
+
+    int time_x = (w - (strlen(time_str) * 8)) / 2;
+    int date_x = (w - (strlen(date_str) * 8)) / 2;
+    gfx_draw_string(time_x, 80, time_str, COLOR_WHITE, COLOR_TRANSPARENT);
+    gfx_draw_string(date_x, 102, date_str, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+    // 4. Central Acrylic Login Card
+    int card_w = 400;
+    int card_h = 320;
+    int card_x = (w - card_w) / 2;
+    int card_y = (h - card_h) / 2 + 25;
+
+    gfx_draw_shadow(card_x, card_y, card_w, card_h, 8);
+    gfx_fillrect(card_x, card_y, card_w, card_h, RGB(24, 26, 38));
+    gfx_drawrect(card_x, card_y, card_w, card_h, login_error ? COLOR_RED : COLOR_ACCENT);
+
+    // User Avatar Badge
+    int av_cx = card_x + card_w / 2;
+    int av_cy = card_y + 46;
+    gfx_fill_circle(av_cx, av_cy, 30, COLOR_ACCENT);
+    gfx_fill_circle(av_cx, av_cy, 26, RGB(32, 36, 54));
+
+    // User initial
+    char init_c = g_username[0];
+    if (init_c >= 'a' && init_c <= 'z') init_c -= 32;
+    char init_s[2] = { init_c ? init_c : 'U', '\0' };
+    gfx_draw_string(av_cx - 4, av_cy - 7, init_s, COLOR_WHITE, COLOR_TRANSPARENT);
+
+    // User identity text
+    int name_x = (card_w - (strlen(g_fullname) * 8)) / 2;
+    gfx_draw_string(card_x + name_x, card_y + 88, g_fullname, COLOR_WHITE, COLOR_TRANSPARENT);
+
+    char host_sub[64];
+    snprintf(host_sub, sizeof(host_sub), "@%s on %s", g_username, g_hostname);
+    int host_x = (card_w - (strlen(host_sub) * 8)) / 2;
+    gfx_draw_string(card_x + host_x, card_y + 108, host_sub, COLOR_ACCENT, COLOR_TRANSPARENT);
+
+    // Password input box
+    int box_w = 280;
+    int box_h = 32;
+    int box_x = card_x + (card_w - box_w) / 2;
+    int box_y = card_y + 138;
+
+    gfx_fillrect(box_x, box_y, box_w, box_h, RGB(16, 18, 26));
+    gfx_drawrect(box_x, box_y, box_w, box_h, login_error ? COLOR_RED : COLOR_BORDER);
+
+    int plen = strlen(login_input);
+    if (plen == 0) {
+        gfx_draw_string(box_x + 10, box_y + 8, "Enter password...", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    } else {
+        char mask[32];
+        for (int p = 0; p < plen && p < 30; p++) mask[p] = '*';
+        mask[plen] = '\0';
+        gfx_draw_string(box_x + 10, box_y + 8, mask, COLOR_WHITE, COLOR_TRANSPARENT);
+    }
+    // Blinking cursor
+    if (pit_get_uptime_seconds() % 2 == 0) {
+        gfx_draw_string(box_x + 10 + (plen * 8), box_y + 8, "|", COLOR_ACCENT, COLOR_TRANSPARENT);
+    }
+
+    // [ Log In -> ] Button
+    int btn_w = 280;
+    int btn_h = 34;
+    int btn_x = card_x + (card_w - btn_w) / 2;
+    int btn_y = card_y + 184;
+
+    gfx_fillrect(btn_x, btn_y, btn_w, btn_h, COLOR_ACCENT);
+    gfx_drawrect(btn_x, btn_y, btn_w, btn_h, COLOR_WHITE);
+    gfx_draw_string(btn_x + (btn_w - 72) / 2, btn_y + 9, "Log In  ->", RGB(17, 17, 27), COLOR_TRANSPARENT);
+
+    // Status or Error Message
+    if (login_error) {
+        gfx_draw_string(card_x + 40, card_y + 236, "[!] Incorrect password. Try again.", COLOR_RED, COLOR_TRANSPARENT);
+    } else {
+        gfx_draw_string(card_x + 48, card_y + 236, "Press Enter or click Log In to unlock", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    }
+
+    // Hint
+    gfx_draw_string(card_x + 40, card_y + 262, "(Password configured during installation)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+    // 5. Bottom System Bar
+    gfx_fillrect(0, h - 40, w, 40, RGB(14, 16, 24));
+    gfx_draw_line(0, h - 40, w, h - 40, COLOR_BORDER);
+    gfx_draw_string(16, h - 26, "✦ AuraOS 1.0 (Installed on Hard Disk)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+    // [ Restart ] button
+    int reb_x = w - 210;
+    int reb_y = h - 33;
+    gfx_fillrect(reb_x, reb_y, 90, 26, RGB(28, 30, 44));
+    gfx_drawrect(reb_x, reb_y, 90, 26, COLOR_BORDER);
+    gfx_draw_string(reb_x + 14, reb_y + 5, "Restart", COLOR_TEXT, COLOR_TRANSPARENT);
+
+    // [ Shut Down ] button
+    int sht_x = w - 105;
+    int sht_y = h - 33;
+    gfx_fillrect(sht_x, sht_y, 90, 26, RGB(38, 20, 24));
+    gfx_drawrect(sht_x, sht_y, 90, 26, COLOR_RED);
+    gfx_draw_string(sht_x + 10, sht_y + 5, "Shut Down", COLOR_RED, COLOR_TRANSPARENT);
+}
+
+static void handle_login_click(int mx, int my) {
+    int w = gfx_get_width();
+    int h = gfx_get_height();
+
+    int card_w = 400;
+    int card_h = 320;
+    int card_x = (w - card_w) / 2;
+    int card_y = (h - card_h) / 2 + 25;
+
+    int btn_w = 280;
+    int btn_h = 34;
+    int btn_x = card_x + (card_w - btn_w) / 2;
+    int btn_y = card_y + 184;
+
+    // Check Log In button click
+    if (mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h) {
+        if (sys_verify_password(login_input)) {
+            g_logged_in = 1;
+            login_error = 0;
+            login_input[0] = '\0';
+        } else {
+            login_error = 1;
+            login_input[0] = '\0';
+        }
+        return;
+    }
+
+    // Check Restart button
+    int reb_x = w - 210;
+    int reb_y = h - 33;
+    if (mx >= reb_x && mx <= reb_x + 90 && my >= reb_y && my <= reb_y + 26) {
+        outb(0x64, 0xFE); // Pulse CPU reset line
+        return;
+    }
+
+    // Check Shut Down button
+    int sht_x = w - 105;
+    int sht_y = h - 33;
+    if (mx >= sht_x && mx <= sht_x + 90 && my >= sht_y && my <= sht_y + 26) {
+        outw(0x604, 0x2000);
+        outw(0xB004, 0x2000);
+        while (1) __asm__ volatile ("cli; hlt");
+        return;
+    }
+}
+
+static void handle_login_key(char key) {
+    if (key == '\r' || key == '\n') {
+        if (sys_verify_password(login_input)) {
+            g_logged_in = 1;
+            login_error = 0;
+            login_input[0] = '\0';
+        } else {
+            login_error = 1;
+            login_input[0] = '\0';
+        }
+    } else if (key == 8 || key == 127) { // Backspace
+        int len = strlen(login_input);
+        if (len > 0) {
+            login_input[len - 1] = '\0';
+        }
+    } else if (key >= 32 && key <= 126) {
+        int len = strlen(login_input);
+        if (len < 30) {
+            login_input[len] = key;
+            login_input[len + 1] = '\0';
+            login_error = 0;
+        }
+    }
+}
+
 void kernel_main(boot_info_t *bi) {
     if (bi->magic != 0x41555241) return;
     g_boot_info = bi;
@@ -539,8 +967,10 @@ void kernel_main(boot_info_t *bi) {
     // Detect Boot Mode: Live CD / ISO vs Installed Hard Disk
     if (bi->is_live_media == 0) {
         g_system_installed = 1; // Booted from hard disk
+        g_logged_in = 0;        // Locked! Show Login Screen on boot
     } else {
         g_system_installed = 0; // Booted from Live CD / ISO
+        g_logged_in = 1;        // Live CD desktop
     }
 
     // 1. Initialize core architecture & interrupt descriptors
@@ -577,6 +1007,27 @@ void kernel_main(boot_info_t *bi) {
 
     // Main Desktop Event & Render Loop
     while (1) {
+        // If system is locked, render and handle Login Screen
+        if (!g_logged_in) {
+            while (kbd_has_char()) {
+                char key = kbd_get_char();
+                handle_login_key(key);
+            }
+
+            int mx = mouse_get_x();
+            int my = mouse_get_y();
+            int clicked = mouse_clicked(0);
+            if (clicked) {
+                handle_login_click(mx, my);
+            }
+
+            draw_login_screen();
+            gfx_draw_cursor(mx, my);
+            gfx_swap_buffers();
+            __asm__ volatile ("hlt");
+            continue;
+        }
+
         // 1. Process keyboard events
         while (kbd_has_char()) {
             char key = kbd_get_char();

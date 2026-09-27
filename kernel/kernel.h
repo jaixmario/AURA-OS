@@ -25,4 +25,15 @@ const char *sys_get_username(void);
 const char *sys_get_hostname(void);
 void sys_set_user_info(const char *fullname, const char *username, const char *hostname, const char *password);
 
+// Login & Lock screen state
+int  sys_is_logged_in(void);
+void sys_set_logged_in(int logged_in);
+int  sys_verify_password(const char *pw);
+void sys_lock_screen(void);
+
+// Theme helpers
+int  get_theme_count(void);
+const char *get_theme_name(int theme);
+const char *get_theme_desc(int theme);
+
 #endif
