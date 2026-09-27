@@ -56,6 +56,7 @@ def main():
         os.path.join(KERNEL_DIR, "apps", "app_sysinfo.c"),
         os.path.join(KERNEL_DIR, "apps", "app_settings.c"),
         os.path.join(KERNEL_DIR, "apps", "app_files.c"),
+        os.path.join(KERNEL_DIR, "apps", "app_installer.c"),
         os.path.join(KERNEL_DIR, "kernel.c")
     ]
 

@@ -11,13 +11,15 @@ start:
     sti
 
     mov [boot_drive], dl
+    mov [is_live_boot], al
 
     ; 1. Check if booted from CD-ROM (El Torito preloaded at 0x7E00)
     cmp dword [0x7E00], 0x0010B866
-    je .kernel_ready
+    jne .read_disk
+    inc byte [is_live_boot]
+    jmp .kernel_ready
 
-    ; Read 2 chunks of 128 sectors (256 sectors = 128 KB) from disk
-    mov dl, [boot_drive]
+.read_disk:
     mov si, dap
     mov cx, 2
 .read_loop:
@@ -131,6 +133,8 @@ start:
     mov [0x700C], ax
     mov al, [0x5219]    ; Bpp
     mov [0x700E], al
+    mov ax, [is_live_boot]
+    mov [0x700F], ax
 
     ; 4. Fast A20 Gate
     cli
@@ -167,7 +171,7 @@ pm_start:
     mov esp, 0x1FFFF0
 
     ; If CD-ROM boot, copy 128KB kernel backwards from 0x7E00 to 0x10000
-    cmp dword [0x7E00], 0x0010B866
+    cmp byte [0x700F], 1
     jne .jump_kernel
     mov esi, 0x7E00 + 131072 - 4
     mov edi, 0x10000 + 131072 - 4
@@ -184,7 +188,8 @@ dap:
     dw 0x0000, 0x1000
     dq 1
 
-boot_drive: db 0
+is_live_boot: db 0
+boot_drive:   db 0
 fallback_modes: dw 0x0144, 0x0118, 0x0115, 0
 
 gdt_start:

@@ -1,4 +1,5 @@
 #include "apps.h"
+#include "../kernel.h"
 #include "../gfx/gfx.h"
 #include "../arch/pit.h"
 #include "../arch/rtc.h"
@@ -58,6 +59,10 @@ static void term_execute_command(void) {
         term_add_line("  sync     - synchronize clock with CMOS");
         term_add_line("  mem      - inspect memory regions");
         term_add_line("  uptime   - show system uptime");
+        term_add_line("  whoami   - show user and hostname");
+        if (!sys_is_installed()) {
+            term_add_line("  install  - launch AuraOS installer");
+        }
         term_add_line("  clear/cls- clear terminal screen");
         term_add_line("  echo <t> - print message");
         term_add_line("  reboot   - restart virtual machine");
@@ -215,6 +220,19 @@ static void term_execute_command(void) {
         term_add_line(msg);
     } else if (strncmp(input_buf, "echo ", 5) == 0) {
         term_add_line(input_buf + 5);
+    } else if (strcmp(input_buf, "install") == 0) {
+        if (!sys_is_installed()) {
+            term_add_line("Launching AuraOS Setup Wizard...");
+            app_installer_launch();
+        } else {
+            term_add_line("AuraOS is already installed on this hard disk.");
+        }
+    } else if (strcmp(input_buf, "whoami") == 0) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "%s@%s [%s]",
+                 sys_get_username(), sys_get_hostname(),
+                 sys_is_installed() ? "Installed" : "Live Media");
+        term_add_line(msg);
     } else if (strcmp(input_buf, "about") == 0) {
         term_add_line("AuraOS - Built from scratch with C and Assembly");
         term_add_line("Custom Bare-Metal Graphical Operating System");
@@ -243,7 +261,8 @@ static void term_draw(window_t *win) {
     // Draw active prompt
     int prompt_y = start_y + (term_line_count * 18);
     char prompt_str[64];
-    snprintf(prompt_str, sizeof(prompt_str), "aura@C:\\%s> ", term_cwd);
+    snprintf(prompt_str, sizeof(prompt_str), "%s@%s:C:\\%s> ",
+             sys_get_username(), sys_get_hostname(), term_cwd);
     int prompt_len = strlen(prompt_str);
     gfx_draw_string(x, prompt_y, prompt_str, COLOR_GREEN, COLOR_TRANSPARENT);
     gfx_draw_string(x + (prompt_len * 8), prompt_y, input_buf, COLOR_WHITE, COLOR_TRANSPARENT);

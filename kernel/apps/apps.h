@@ -13,5 +13,7 @@ void app_notes_open_file(const char *filename);
 void app_settings_launch(void);
 void app_settings_open_tab(int tab);
 void app_files_launch(void);
+void app_installer_launch(void);
+int  app_installer_is_open(void);
 
 #endif

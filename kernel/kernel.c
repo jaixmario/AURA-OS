@@ -14,6 +14,102 @@ static int start_menu_open = 0;
 static boot_info_t *g_boot_info = 0;
 static int current_theme = 0; // 0=Nebula, 1=Midnight, 2=Cyberpunk, 3=Emerald
 
+static int g_system_installed = 0;
+static char g_fullname[32] = "Aura User";
+static char g_username[32] = "aura";
+static char g_hostname[32] = "aura-pc";
+static char g_password[32] = "aura";
+
+int sys_is_installed(void) {
+    return g_system_installed;
+}
+
+void sys_set_installed(int installed) {
+    g_system_installed = installed;
+}
+
+const char *sys_get_fullname(void) {
+    return g_fullname;
+}
+
+const char *sys_get_username(void) {
+    return g_username;
+}
+
+const char *sys_get_hostname(void) {
+    return g_hostname;
+}
+
+void sys_set_user_info(const char *fullname, const char *username, const char *hostname, const char *password) {
+    if (fullname && fullname[0]) {
+        strncpy(g_fullname, fullname, sizeof(g_fullname) - 1);
+        g_fullname[sizeof(g_fullname) - 1] = '\0';
+    }
+    if (username && username[0]) {
+        strncpy(g_username, username, sizeof(g_username) - 1);
+        g_username[sizeof(g_username) - 1] = '\0';
+    }
+    if (hostname && hostname[0]) {
+        strncpy(g_hostname, hostname, sizeof(g_hostname) - 1);
+        g_hostname[sizeof(g_hostname) - 1] = '\0';
+    }
+    if (password && password[0]) {
+        strncpy(g_password, password, sizeof(g_password) - 1);
+        g_password[sizeof(g_password) - 1] = '\0';
+    }
+}
+
+static void load_user_profile(void) {
+    vfs_file_t *f = vfs_find("USER.CFG");
+    if (!f || f->size == 0) return;
+
+    char *inst = strstr(f->data, "INSTALLED=1");
+    if (inst) {
+        if (g_boot_info && g_boot_info->is_live_media == 0) {
+            g_system_installed = 1;
+        }
+    }
+
+    char *name_line = strstr(f->data, "NAME=");
+    if (name_line) {
+        name_line += 5;
+        int len = 0;
+        while (name_line[len] && name_line[len] != '\r' && name_line[len] != '\n' && len < (int)sizeof(g_fullname) - 1) {
+            len++;
+        }
+        if (len > 0) {
+            strncpy(g_fullname, name_line, len);
+            g_fullname[len] = '\0';
+        }
+    }
+
+    char *user_line = strstr(f->data, "USERNAME=");
+    if (user_line) {
+        user_line += 9;
+        int len = 0;
+        while (user_line[len] && user_line[len] != '\r' && user_line[len] != '\n' && len < (int)sizeof(g_username) - 1) {
+            len++;
+        }
+        if (len > 0) {
+            strncpy(g_username, user_line, len);
+            g_username[len] = '\0';
+        }
+    }
+
+    char *host_line = strstr(f->data, "HOSTNAME=");
+    if (host_line) {
+        host_line += 9;
+        int len = 0;
+        while (host_line[len] && host_line[len] != '\r' && host_line[len] != '\n' && len < (int)sizeof(g_hostname) - 1) {
+            len++;
+        }
+        if (len > 0) {
+            strncpy(g_hostname, host_line, len);
+            g_hostname[len] = '\0';
+        }
+    }
+}
+
 void set_desktop_theme(int theme) {
     if (theme >= 0 && theme <= 3) current_theme = theme;
 }
@@ -63,7 +159,109 @@ static void draw_wallpaper(void) {
 
     // Centered Desktop Brand Watermark
     gfx_draw_string(w / 2 - 40, h / 2 - 30, "✦ AURA OS", accent_grid, COLOR_TRANSPARENT);
-    gfx_draw_string(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", accent_grid, COLOR_TRANSPARENT);
+    if (!sys_is_installed()) {
+        gfx_draw_string(w / 2 - 76, h / 2 - 10, "Live Installation Media", accent_grid, COLOR_TRANSPARENT);
+    } else {
+        gfx_draw_string(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", accent_grid, COLOR_TRANSPARENT);
+    }
+}
+
+typedef struct {
+    const char *title;
+    unsigned int color;
+    void (*launch)(void);
+    int is_installer;
+} desktop_item_t;
+
+static int selected_desktop_icon = -1;
+static unsigned int last_icon_click_time = 0;
+
+static void draw_desktop_icons(void) {
+    int is_inst = sys_is_installed();
+    int count = is_inst ? 7 : 8;
+
+    desktop_item_t items[8];
+    int idx = 0;
+    if (!is_inst) {
+        items[idx++] = (desktop_item_t){ "Install", RGB(30, 144, 255), app_installer_launch, 1 };
+    }
+    items[idx++] = (desktop_item_t){ "Files", RGB(245, 185, 66), app_files_launch, 0 };
+    items[idx++] = (desktop_item_t){ "Terminal", RGB(40, 200, 100), app_term_launch, 0 };
+    items[idx++] = (desktop_item_t){ "Notes", RGB(220, 220, 240), app_notes_launch, 0 };
+    items[idx++] = (desktop_item_t){ "Settings", RGB(180, 190, 220), app_settings_launch, 0 };
+    items[idx++] = (desktop_item_t){ "Calc", RGB(180, 140, 240), app_calc_launch, 0 };
+    items[idx++] = (desktop_item_t){ "Paint", RGB(240, 120, 180), app_paint_launch, 0 };
+    items[idx++] = (desktop_item_t){ "SysInfo", RGB(100, 200, 240), app_sysinfo_launch, 0 };
+
+    int mx = mouse_get_x();
+    int my = mouse_get_y();
+
+    int start_x = 24;
+    int start_y = 24;
+    int icon_w = 84;
+    int icon_h = 74;
+    int stride_y = 82;
+
+    for (int i = 0; i < count; i++) {
+        int ix = start_x;
+        int iy = start_y + (i * stride_y);
+
+        int is_hover = (mx >= ix && mx <= ix + icon_w && my >= iy && my <= iy + icon_h);
+        int is_sel = (selected_desktop_icon == i);
+
+        if (is_sel || is_hover) {
+            gfx_fillrect(ix, iy, icon_w, icon_h, is_sel ? RGB(45, 52, 78) : RGB(32, 36, 54));
+            gfx_drawrect(ix, iy, icon_w, icon_h, is_sel ? COLOR_ACCENT : RGB(55, 60, 85));
+        }
+
+        if (items[i].is_installer) {
+            // Shiny live installer CD/disc icon
+            gfx_fill_circle(ix + 42, iy + 22, 15, RGB(30, 144, 255));
+            gfx_draw_circle(ix + 42, iy + 22, 15, COLOR_WHITE);
+            gfx_fill_circle(ix + 42, iy + 22, 5, RGB(22, 24, 38));
+            gfx_draw_circle(ix + 42, iy + 22, 5, COLOR_ACCENT);
+            gfx_draw_string(ix + 18, iy + 42, "Install", COLOR_WHITE, COLOR_TRANSPARENT);
+            gfx_draw_string(ix + 18, iy + 56, "AuraOS", COLOR_ACCENT, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "Files") == 0) {
+            gfx_fillrect(ix + 28, iy + 12, 14, 5, RGB(245, 185, 66));
+            gfx_fillrect(ix + 28, iy + 16, 28, 18, RGB(230, 165, 45));
+            gfx_drawrect(ix + 28, iy + 16, 28, 18, RGB(255, 215, 100));
+            gfx_draw_string(ix + 22, iy + 48, "Files", COLOR_WHITE, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "Terminal") == 0) {
+            gfx_fillrect(ix + 26, iy + 12, 32, 22, RGB(18, 20, 30));
+            gfx_drawrect(ix + 26, iy + 12, 32, 22, RGB(70, 75, 100));
+            gfx_draw_string(ix + 31, iy + 15, ">_", COLOR_GREEN, COLOR_TRANSPARENT);
+            gfx_draw_string(ix + 12, iy + 48, "Terminal", COLOR_WHITE, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "Notes") == 0) {
+            gfx_fillrect(ix + 28, iy + 12, 28, 24, RGB(235, 240, 245));
+            gfx_draw_line(ix + 32, iy + 18, ix + 50, iy + 18, RGB(120, 130, 150));
+            gfx_draw_line(ix + 32, iy + 23, ix + 48, iy + 23, RGB(120, 130, 150));
+            gfx_draw_line(ix + 32, iy + 28, ix + 44, iy + 28, RGB(120, 130, 150));
+            gfx_draw_string(ix + 22, iy + 48, "Notes", COLOR_WHITE, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "Settings") == 0) {
+            gfx_fillrect(ix + 27, iy + 12, 30, 24, RGB(42, 46, 68));
+            gfx_drawrect(ix + 27, iy + 12, 30, 24, COLOR_ACCENT);
+            gfx_draw_string(ix + 35, iy + 16, "*", COLOR_ACCENT, COLOR_TRANSPARENT);
+            gfx_draw_string(ix + 10, iy + 48, "Settings", COLOR_WHITE, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "Calc") == 0) {
+            gfx_fillrect(ix + 28, iy + 12, 28, 24, RGB(38, 36, 56));
+            gfx_drawrect(ix + 28, iy + 12, 28, 24, RGB(90, 85, 120));
+            gfx_draw_string(ix + 33, iy + 16, "+-", COLOR_YELLOW, COLOR_TRANSPARENT);
+            gfx_draw_string(ix + 26, iy + 48, "Calc", COLOR_WHITE, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "Paint") == 0) {
+            gfx_fillrect(ix + 28, iy + 12, 28, 24, RGB(50, 30, 48));
+            gfx_drawrect(ix + 28, iy + 12, 28, 24, RGB(120, 70, 100));
+            gfx_fill_circle(ix + 35, iy + 20, 3, COLOR_RED);
+            gfx_fill_circle(ix + 45, iy + 20, 3, COLOR_GREEN);
+            gfx_fill_circle(ix + 40, iy + 28, 3, COLOR_BLUE);
+            gfx_draw_string(ix + 22, iy + 48, "Paint", COLOR_WHITE, COLOR_TRANSPARENT);
+        } else if (strcmp(items[i].title, "SysInfo") == 0) {
+            gfx_fill_circle(ix + 42, iy + 24, 13, RGB(25, 45, 65));
+            gfx_draw_circle(ix + 42, iy + 24, 13, COLOR_ACCENT);
+            gfx_draw_string(ix + 39, iy + 16, "i", COLOR_ACCENT, COLOR_TRANSPARENT);
+            gfx_draw_string(ix + 14, iy + 48, "SysInfo", COLOR_WHITE, COLOR_TRANSPARENT);
+        }
+    }
 }
 
 static void draw_taskbar(void) {
@@ -148,7 +346,9 @@ static void draw_start_menu(void) {
     int h = gfx_get_height();
     int menu_x = 8;
     int menu_w = 210;
-    int menu_h = 324;
+    int is_inst = sys_is_installed();
+    int num_items = is_inst ? 7 : 8;
+    int menu_h = is_inst ? 324 : 362;
     int menu_y = h - 48 - menu_h - 8;
 
     // Drop shadow
@@ -160,23 +360,26 @@ static void draw_start_menu(void) {
 
     // Header banner
     gfx_gradient_h(menu_x + 1, menu_y + 1, menu_w - 2, 34, COLOR_ACTIVE_HEADER, COLOR_HEADER);
-    gfx_draw_string(menu_x + 16, menu_y + 10, "Applications", COLOR_WHITE, COLOR_TRANSPARENT);
+    gfx_draw_string(menu_x + 16, menu_y + 10, is_inst ? "Applications" : "Live AuraOS", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Menu items
-    const char *items[7] = {
-        "> 1. File Explorer",
-        "> 2. Terminal",
-        "> 3. Calculator",
-        "> 4. Canvas Paint",
-        "> 5. Notes Editor",
-        "> 6. Settings Panel",
-        "> 7. System Info"
-    };
+    const char *items[8];
+    int idx = 0;
+    if (!is_inst) {
+        items[idx++] = "✦ Install AuraOS 1.0";
+    }
+    items[idx++] = "> 1. File Explorer";
+    items[idx++] = "> 2. Terminal";
+    items[idx++] = "> 3. Calculator";
+    items[idx++] = "> 4. Canvas Paint";
+    items[idx++] = "> 5. Notes Editor";
+    items[idx++] = "> 6. Settings Panel";
+    items[idx++] = "> 7. System Info";
 
     int mx = mouse_get_x();
     int my = mouse_get_y();
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < num_items; i++) {
         int item_y = menu_y + 42 + (i * 38);
         int is_hover = (mx >= menu_x + 6 && mx <= menu_x + menu_w - 6 &&
                         my >= item_y && my <= item_y + 32);
@@ -186,7 +389,8 @@ static void draw_start_menu(void) {
             gfx_drawrect(menu_x + 6, item_y, menu_w - 12, 32, COLOR_ACCENT);
         }
 
-        gfx_draw_string(menu_x + 16, item_y + 8, items[i], is_hover ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+        unsigned int fg = is_hover ? COLOR_WHITE : ((!is_inst && i == 0) ? COLOR_ACCENT : COLOR_TEXT);
+        gfx_draw_string(menu_x + 16, item_y + 8, items[i], fg, COLOR_TRANSPARENT);
     }
 }
 
@@ -205,20 +409,33 @@ static void handle_desktop_click(int mx, int my) {
     if (start_menu_open) {
         int menu_x = 8;
         int menu_w = 210;
-        int menu_h = 324;
+        int is_inst = sys_is_installed();
+        int num_items = is_inst ? 7 : 8;
+        int menu_h = is_inst ? 324 : 362;
         int menu_y = h - 48 - menu_h - 8;
 
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y && my <= menu_y + menu_h) {
-            for (int i = 0; i < 7; i++) {
+            for (int i = 0; i < num_items; i++) {
                 int item_y = menu_y + 42 + (i * 38);
                 if (my >= item_y && my <= item_y + 32) {
-                    if (i == 0) app_files_launch();
-                    else if (i == 1) app_term_launch();
-                    else if (i == 2) app_calc_launch();
-                    else if (i == 3) app_paint_launch();
-                    else if (i == 4) app_notes_launch();
-                    else if (i == 5) app_settings_launch();
-                    else if (i == 6) app_sysinfo_launch();
+                    if (!is_inst) {
+                        if (i == 0) app_installer_launch();
+                        else if (i == 1) app_files_launch();
+                        else if (i == 2) app_term_launch();
+                        else if (i == 3) app_calc_launch();
+                        else if (i == 4) app_paint_launch();
+                        else if (i == 5) app_notes_launch();
+                        else if (i == 6) app_settings_launch();
+                        else if (i == 7) app_sysinfo_launch();
+                    } else {
+                        if (i == 0) app_files_launch();
+                        else if (i == 1) app_term_launch();
+                        else if (i == 2) app_calc_launch();
+                        else if (i == 3) app_paint_launch();
+                        else if (i == 4) app_notes_launch();
+                        else if (i == 5) app_settings_launch();
+                        else if (i == 6) app_sysinfo_launch();
+                    }
                     start_menu_open = 0;
                     return;
                 }
@@ -226,6 +443,54 @@ static void handle_desktop_click(int mx, int my) {
         } else {
             // Click outside closes start menu
             start_menu_open = 0;
+        }
+    }
+
+    // Check click on desktop icons
+    int clicked_on_window = 0;
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        window_t *win = wm_get_window_at_index(i);
+        if (win && win->is_open && !win->is_minimized) {
+            if (mx >= win->x && mx < win->x + win->width &&
+                my >= win->y && my < win->y + win->height) {
+                clicked_on_window = 1;
+                break;
+            }
+        }
+    }
+
+    if (!clicked_on_window && my < tb_y) {
+        int is_inst = sys_is_installed();
+        int count = is_inst ? 7 : 8;
+        desktop_item_t items[8];
+        int idx = 0;
+        if (!is_inst) {
+            items[idx++] = (desktop_item_t){ "Install", RGB(30, 144, 255), app_installer_launch, 1 };
+        }
+        items[idx++] = (desktop_item_t){ "Files", RGB(245, 185, 66), app_files_launch, 0 };
+        items[idx++] = (desktop_item_t){ "Terminal", RGB(40, 200, 100), app_term_launch, 0 };
+        items[idx++] = (desktop_item_t){ "Notes", RGB(220, 220, 240), app_notes_launch, 0 };
+        items[idx++] = (desktop_item_t){ "Settings", RGB(180, 190, 220), app_settings_launch, 0 };
+        items[idx++] = (desktop_item_t){ "Calc", RGB(180, 140, 240), app_calc_launch, 0 };
+        items[idx++] = (desktop_item_t){ "Paint", RGB(240, 120, 180), app_paint_launch, 0 };
+        items[idx++] = (desktop_item_t){ "SysInfo", RGB(100, 200, 240), app_sysinfo_launch, 0 };
+
+        int icon_clicked = -1;
+        for (int i = 0; i < count; i++) {
+            int ix = 24;
+            int iy = 24 + (i * 82);
+            if (mx >= ix && mx <= ix + 84 && my >= iy && my <= iy + 74) {
+                icon_clicked = i;
+                break;
+            }
+        }
+
+        if (icon_clicked >= 0) {
+            selected_desktop_icon = icon_clicked;
+            items[icon_clicked].launch();
+            return;
+        } else {
+            selected_desktop_icon = -1;
         }
     }
 
@@ -271,6 +536,13 @@ void kernel_main(boot_info_t *bi) {
     if (bi->magic != 0x41555241) return;
     g_boot_info = bi;
 
+    // Detect Boot Mode: Live CD / ISO vs Installed Hard Disk
+    if (bi->is_live_media == 0) {
+        g_system_installed = 1; // Booted from hard disk
+    } else {
+        g_system_installed = 0; // Booted from Live CD / ISO
+    }
+
     // 1. Initialize core architecture & interrupt descriptors
     idt_init();
 
@@ -289,6 +561,9 @@ void kernel_main(boot_info_t *bi) {
     // 6. Initialize Virtual File System
     vfs_init();
 
+    // Load installed user profile (if present on disk)
+    load_user_profile();
+
     // Enable CPU interrupts!
     __asm__ volatile ("sti");
 
@@ -298,21 +573,45 @@ void kernel_main(boot_info_t *bi) {
     // 8. Initialize Window Manager
     wm_init();
 
-    // Launch default initial windows
-    app_sysinfo_launch();
-    app_calc_launch();
-    app_term_launch();
-    app_paint_launch();
-    app_settings_launch();
-    app_notes_launch();
-    app_files_launch();
+    // Note: Do not automatically open apps on boot (clean desktop, like Ubuntu)
 
     // Main Desktop Event & Render Loop
     while (1) {
         // 1. Process keyboard events
         while (kbd_has_char()) {
             char key = kbd_get_char();
-            wm_handle_key(key);
+            window_t *act = wm_get_active_window();
+            if (act && act->is_open && !act->is_minimized) {
+                wm_handle_key(key);
+            } else {
+                // Desktop keyboard shortcuts
+                if (key == 27 || key == ' ') {
+                    start_menu_open = !start_menu_open;
+                } else if (!sys_is_installed() && (key == 'i' || key == 'I')) {
+                    app_installer_launch();
+                } else if (key == 'f' || key == 'F' || (start_menu_open && key == '1')) {
+                    app_files_launch();
+                    start_menu_open = 0;
+                } else if (key == 't' || key == 'T' || (start_menu_open && key == '2')) {
+                    app_term_launch();
+                    start_menu_open = 0;
+                } else if (key == 'c' || key == 'C' || (start_menu_open && key == '3')) {
+                    app_calc_launch();
+                    start_menu_open = 0;
+                } else if (key == 'p' || key == 'P' || (start_menu_open && key == '4')) {
+                    app_paint_launch();
+                    start_menu_open = 0;
+                } else if (key == 'n' || key == 'N' || (start_menu_open && key == '5')) {
+                    app_notes_launch();
+                    start_menu_open = 0;
+                } else if (key == 's' || key == 'S' || (start_menu_open && key == '6')) {
+                    app_settings_launch();
+                    start_menu_open = 0;
+                } else if (start_menu_open && key == '7') {
+                    app_sysinfo_launch();
+                    start_menu_open = 0;
+                }
+            }
         }
 
         // 2. Process mouse events
@@ -329,6 +628,7 @@ void kernel_main(boot_info_t *bi) {
 
         // 3. Render Desktop Scene
         draw_wallpaper();
+        draw_desktop_icons();
         wm_render();
         draw_taskbar();
         draw_start_menu();

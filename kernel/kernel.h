@@ -8,11 +8,21 @@ typedef struct {
     unsigned short height;       // Screen height (768)
     unsigned short pitch;        // Bytes per scanline
     unsigned char  bpp;          // Bits per pixel (24 or 32)
+    unsigned char  is_live_media;// 1 = Booted from Live CD / ISO, 0 = Hard Disk
+    unsigned char  boot_drive;   // BIOS boot drive number
 } __attribute__((packed)) boot_info_t;
 
 void kernel_main(boot_info_t *bi);
 void set_desktop_theme(int theme);
 int  get_desktop_theme(void);
 boot_info_t *get_boot_info(void);
+
+// User & Installation state
+int  sys_is_installed(void);
+void sys_set_installed(int installed);
+const char *sys_get_fullname(void);
+const char *sys_get_username(void);
+const char *sys_get_hostname(void);
+void sys_set_user_info(const char *fullname, const char *username, const char *hostname, const char *password);
 
 #endif
