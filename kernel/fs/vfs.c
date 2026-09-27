@@ -5,11 +5,11 @@
 #include "../arch/io.h"
 
 #define ATA_FS_MAGIC         0x41555241 // 'AURA'
-#define ATA_FS_VERSION       1
+#define ATA_FS_VERSION       2
 #define ATA_FS_SUPER_LBA     1000
-#define ATA_FS_SUPER_SECTORS 8
-#define ATA_SECTORS_PER_FILE 4
-#define ATA_FS_DATA_LBA      1008
+#define ATA_FS_SUPER_SECTORS 32
+#define ATA_SECTORS_PER_FILE 64
+#define ATA_FS_DATA_LBA      1032
 
 typedef struct {
     char name[VFS_MAX_FILENAME];
@@ -36,7 +36,8 @@ typedef struct {
 } __attribute__((packed)) ata_superblock_t;
 
 static ata_superblock_t disk_sb;
-static vfs_file_t files[VFS_MAX_FILES];
+// Map 128-file in-memory cache directly to extended RAM at 9MB mark (0x900000-0xD10000)
+static vfs_file_t * const files = (vfs_file_t *)0x900000;
 static int file_count = 0;
 static int disk_backed = 0;
 
@@ -58,7 +59,8 @@ static const char *default_cfg =
     "DRIVER=ATA_PIO\n"
     "PRIMARY_BUS=0x1F0\n"
     "LBA_OFFSET=1000\n"
-    "MAX_FILES=32\n\n"
+    "MAX_FILES=128\n"
+    "MAX_FILESIZE=32768\n\n"
     "[DISPLAY]\n"
     "WIDTH=1024\n"
     "HEIGHT=768\n"
@@ -121,13 +123,11 @@ int vfs_sync_disk(void) {
         disk_sb.entries[i].lba_start = files[i].disk_lba;
         disk_sb.entries[i].sector_count = ATA_SECTORS_PER_FILE;
 
-        // Write file data sectors (4 sectors = 2048 bytes)
-        unsigned char sec_buf[ATA_SECTORS_PER_FILE * ATA_SECTOR_SIZE];
-        memset(sec_buf, 0, sizeof(sec_buf));
-        if (files[i].size > 0) {
-            memcpy(sec_buf, files[i].data, files[i].size);
+        // Zero-copy direct write of file data sectors (64 sectors = 32KB)
+        if (files[i].size < VFS_MAX_FILESIZE) {
+            memset(files[i].data + files[i].size, 0, VFS_MAX_FILESIZE - files[i].size);
         }
-        ata_write_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, sec_buf);
+        ata_write_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, files[i].data);
     }
 
     // Write superblock (8 sectors at LBA 1000)
@@ -198,12 +198,10 @@ int vfs_write_file(const char *name, const char *content, unsigned int size) {
     f->data[size] = '\0';
 
     if (disk_backed) {
-        unsigned char sec_buf[ATA_SECTORS_PER_FILE * ATA_SECTOR_SIZE];
-        memset(sec_buf, 0, sizeof(sec_buf));
-        if (size > 0) {
-            memcpy(sec_buf, f->data, size);
+        if (size < VFS_MAX_FILESIZE) {
+            memset(f->data + size, 0, VFS_MAX_FILESIZE - size);
         }
-        ata_write_sectors(f->disk_lba, ATA_SECTORS_PER_FILE, sec_buf);
+        ata_write_sectors(f->disk_lba, ATA_SECTORS_PER_FILE, f->data);
         vfs_sync_disk();
     }
     return 0;
@@ -299,6 +297,7 @@ unsigned int vfs_get_disk_sectors(void) {
 void vfs_init(void) {
     file_count = 0;
     disk_backed = 0;
+    memset(files, 0, VFS_MAX_FILES * sizeof(vfs_file_t));
 
     int ata_ok = ata_init();
     if (ata_ok == 0 || ata_is_available()) {
@@ -324,9 +323,8 @@ void vfs_init(void) {
                 files[i].created_day = disk_sb.entries[i].created_day;
                 files[i].disk_lba = disk_sb.entries[i].lba_start;
 
-                unsigned char sec_buf[ATA_SECTORS_PER_FILE * ATA_SECTOR_SIZE];
-                ata_read_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, sec_buf);
-                memcpy(files[i].data, sec_buf, files[i].size);
+                // Zero-copy direct read from ATA sectors into file buffer
+                ata_read_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, files[i].data);
                 files[i].data[files[i].size] = '\0';
             }
             return;

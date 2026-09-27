@@ -5,36 +5,39 @@
 #include "../libc/string.h"
 
 static void sysinfo_draw(window_t *win) {
-    int sx = win->x + 24;
-    int sy = win->y + TITLEBAR_HEIGHT + 20;
+    int sx = win->x + 20;
+    int sy = win->y + TITLEBAR_HEIGHT + 14;
+    int max_w = win->width - 40;
 
-    // Header badge
-    gfx_fillrect(sx, sy, 72, 72, RGB(49, 50, 68));
-    gfx_drawrect(sx, sy, 72, 72, COLOR_ACCENT);
-    gfx_draw_string(sx + 14, sy + 18, "✦", COLOR_ACCENT, COLOR_TRANSPARENT);
-    gfx_draw_string(sx + 16, sy + 38, "OS", COLOR_WHITE, COLOR_TRANSPARENT);
+    // 1. Header badge & branding
+    gfx_fillrect(sx, sy, 58, 58, RGB(42, 46, 68));
+    gfx_drawrect(sx, sy, 58, 58, COLOR_ACCENT);
+    gfx_draw_string(sx + 20, sy + 12, "✦", COLOR_ACCENT, COLOR_TRANSPARENT);
+    gfx_draw_string(sx + 14, sy + 32, "AURA", COLOR_WHITE, COLOR_TRANSPARENT);
 
     // Title info
-    gfx_draw_string(sx + 88, sy + 12, "AuraOS Graphical System", COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(sx + 88, sy + 34, "Version 1.0.0 (Release-x86)", COLOR_ACCENT, COLOR_TRANSPARENT);
-    gfx_draw_string(sx + 88, sy + 54, sys_is_installed() ? "Status: Installed on Hard Disk" : "Status: Live Installation Media (CD-ROM)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_draw_string(sx + 72, sy + 4, "AuraOS Graphical System", COLOR_WHITE, COLOR_TRANSPARENT);
+    gfx_draw_string(sx + 72, sy + 24, "Version 1.2.0 (i686 Protected Mode)", COLOR_ACCENT, COLOR_TRANSPARENT);
+    const char *status_str = sys_is_installed() ? "Status: Installed on Hard Disk (ATA)" : "Status: Live Media (CD-ROM ISO)";
+    gfx_draw_string(sx + 72, sy + 42, status_str, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
-    // Separator line
-    int line_y = sy + 90;
-    gfx_draw_line(sx, line_y, sx + win->width - 48, line_y, COLOR_BORDER);
+    // 2. Separator line
+    int line_y = sy + 70;
+    gfx_draw_line(sx, line_y, sx + max_w, line_y, COLOR_BORDER);
 
-    // Hardware specifications table
-    int ty = line_y + 14;
+    // 3. Hardware & Architecture specifications table
+    int ty = line_y + 12;
     char u_line[64], h_line[64];
     snprintf(u_line, sizeof(u_line), "Active User  :  %s (%s)", sys_get_username(), sys_get_fullname());
     snprintf(h_line, sizeof(h_line), "Computer Name:  %s", sys_get_hostname());
-    gfx_draw_string(sx, ty,       u_line, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(sx, ty + 20,  h_line, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(sx, ty + 40,  "Architecture :  Intel x86 (32-bit Protected Mode)", COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(sx, ty + 60,  "Display Mode :  VESA VBE 2.0+ (1024x768 TrueColor)", COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(sx, ty + 80,  "VRAM Buffer  :  Double Buffered (Linear Framebuffer)", COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(sx, ty + 100, "Input Devices:  PS/2 Mouse & PS/2 Keyboard", COLOR_TEXT, COLOR_TRANSPARENT);
-    gfx_draw_string(sx, ty + 120, "PIT Frequency:  100 Hz (10ms Quantum)", COLOR_TEXT, COLOR_TRANSPARENT);
+
+    gfx_draw_string_clipped(sx, ty,       u_line, COLOR_WHITE, COLOR_TRANSPARENT, max_w);
+    gfx_draw_string_clipped(sx, ty + 20,  h_line, COLOR_WHITE, COLOR_TRANSPARENT, max_w);
+    gfx_draw_string_clipped(sx, ty + 40,  "Architecture :  Intel x86 (32-bit Protected Mode)", COLOR_TEXT, COLOR_TRANSPARENT, max_w);
+    gfx_draw_string_clipped(sx, ty + 60,  "Display Mode :  1024x768 TrueColor (32bpp RGBA)", COLOR_TEXT, COLOR_TRANSPARENT, max_w);
+    gfx_draw_string_clipped(sx, ty + 80,  "Graphics VRAM:  Hardware Double Buffered (REP MOVSL)", COLOR_TEXT, COLOR_TRANSPARENT, max_w);
+    gfx_draw_string_clipped(sx, ty + 100, "Input Drivers:  PS/2 Mouse (200Hz) & PS/2 Keyboard", COLOR_TEXT, COLOR_TRANSPARENT, max_w);
+    gfx_draw_string_clipped(sx, ty + 120, "Timer & Clock:  100 Hz PIT & CMOS Hardware RTC", COLOR_TEXT, COLOR_TRANSPARENT, max_w);
 
     // Live Uptime
     char up_str[64];
@@ -43,14 +46,18 @@ static void sysinfo_draw(window_t *win) {
     unsigned int mins = (sec % 3600) / 60;
     unsigned int s = sec % 60;
     snprintf(up_str, sizeof(up_str), "System Uptime:  %02u:%02u:%02u  (%u ticks)", hrs, mins, s, pit_get_ticks());
-    gfx_draw_string(sx, ty + 110, up_str, COLOR_GREEN, COLOR_TRANSPARENT);
+    gfx_draw_string_clipped(sx, ty + 140, up_str, COLOR_GREEN, COLOR_TRANSPARENT, max_w);
+
+    // 4. Activity bar separator
+    int act_sep_y = ty + 164;
+    gfx_draw_line(sx, act_sep_y, sx + max_w, act_sep_y, COLOR_BORDER);
 
     // Animated Activity bar
-    int bar_y = ty + 140;
+    int bar_y = act_sep_y + 12;
     gfx_draw_string(sx, bar_y, "CPU Activity :", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     int bar_x = sx + 130;
-    int bar_w = 260;
-    gfx_fillrect(bar_x, bar_y + 2, bar_w, 14, RGB(24, 25, 38));
+    int bar_w = max_w - 130;
+    gfx_fillrect(bar_x, bar_y + 2, bar_w, 14, RGB(22, 24, 34));
     gfx_drawrect(bar_x, bar_y + 2, bar_w, 14, COLOR_BORDER);
 
     int progress = (pit_get_ticks() * 4) % (bar_w - 4);
@@ -58,7 +65,7 @@ static void sysinfo_draw(window_t *win) {
 }
 
 void app_sysinfo_launch(void) {
-    window_t *win = wm_create_window("System Information", 260, 140, 480, 360, RGB(30, 32, 48));
+    window_t *win = wm_create_window("System Information", 250, 120, 500, 390, RGB(30, 32, 48));
     if (!win) return;
     win->draw_client = sysinfo_draw;
 }

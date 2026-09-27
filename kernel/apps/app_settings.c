@@ -64,37 +64,36 @@ static void settings_draw(window_t *win) {
 
     if (active_tab == 0) {
         // Tab 0: Themes & Personalization
-        gfx_draw_string(cx, cy, "Real Image Wallpapers", COLOR_WHITE, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, cy + 18, "Select a high-resolution photographic wallpaper:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy, "Photographic Wallpapers", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy + 18, "Select a native 1024x768 TrueColor wallpaper:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
         int cur_theme = get_desktop_theme();
-        int col_w = (cw - 12) / 2;
-
         int count = wallpaper_get_count();
+
         for (int i = 0; i < count; i++) {
-            int col = i / 3;
-            int row = i % 3;
-            int bx = cx + (col * (col_w + 12));
-            int by = cy + 44 + (row * 68);
+            int bx = cx;
+            int by = cy + 44 + (i * 54);
             int is_sel = (cur_theme == i);
 
-            gfx_fillrect(bx, by, col_w, 60, is_sel ? RGB(36, 40, 60) : RGB(26, 28, 40));
-            gfx_drawrect(bx, by, col_w, 60, is_sel ? COLOR_ACCENT : COLOR_BORDER);
+            gfx_fillrect(bx, by, cw, 48, is_sel ? RGB(36, 44, 68) : RGB(26, 28, 40));
+            gfx_drawrect(bx, by, cw, 48, is_sel ? COLOR_ACCENT : COLOR_BORDER);
 
             unsigned int sw_col = wallpaper_get_color(i);
-
+            gfx_fill_circle(bx + 20, by + 24, 8, sw_col);
             if (is_sel) {
-                gfx_fill_circle(bx + 16, by + 30, 8, sw_col);
-                gfx_fill_circle(bx + 16, by + 30, 3, RGB(17, 17, 27));
-            } else {
-                gfx_fill_circle(bx + 16, by + 30, 7, sw_col);
+                gfx_fill_circle(bx + 20, by + 24, 3, RGB(17, 17, 27));
             }
 
-            gfx_draw_string(bx + 30, by + 12, get_theme_name(i), is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
-            gfx_draw_string(bx + 30, by + 32, get_theme_desc(i), COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+            gfx_draw_string(bx + 38, by + 8, get_theme_name(i), is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+            gfx_draw_string_clipped(bx + 38, by + 26, get_theme_desc(i), COLOR_TEXT_MUTED, COLOR_TRANSPARENT, cw - 120);
 
             if (is_sel) {
-                gfx_draw_string(bx + col_w - 60, by + 12, "[Active]", COLOR_ACCENT, COLOR_TRANSPARENT);
+                gfx_fillrect(bx + cw - 74, by + 13, 62, 22, COLOR_ACCENT);
+                gfx_draw_string(bx + cw - 67, by + 16, "Active", RGB(17, 17, 27), COLOR_TRANSPARENT);
+            } else {
+                gfx_fillrect(bx + cw - 74, by + 13, 62, 22, RGB(36, 40, 58));
+                gfx_drawrect(bx + cw - 74, by + 13, 62, 22, COLOR_BORDER);
+                gfx_draw_string(bx + cw - 65, by + 16, "Apply", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
             }
         }
     } else if (active_tab == 1) {
@@ -113,8 +112,8 @@ static void settings_draw(window_t *win) {
         char live_dt[48];
         snprintf(live_dt, sizeof(live_dt), "Date: %04u-%02u-%02u    Time: %02u:%02u:%02u",
                  t.year, t.month, t.day, t.hour, t.minute, t.second);
-        gfx_draw_string(cx + 16, card_y + 10, live_dt, COLOR_WHITE, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 16, card_y + 30, "Source: Hardware CMOS RTC (Synchronized with host)", COLOR_GREEN, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(cx + 16, card_y + 10, live_dt, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+        gfx_draw_string_clipped(cx + 16, card_y + 30, "Source: Hardware CMOS RTC (Synchronized)", COLOR_GREEN, COLOR_TRANSPARENT, cw - 32);
 
         // 2. Adjust Clock Time
         int time_y = card_y + 64;
@@ -247,12 +246,12 @@ static void settings_draw(window_t *win) {
         snprintf(fb_str, sizeof(fb_str), "VRAM Base     :  0x%08X (Linear Framebuffer)", bi ? bi->fb_base : 0);
 
         int sy = cy + 60;
-        gfx_draw_string(cx, sy,       res_str, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, sy + 26,  bpp_str, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, sy + 52,  pitch_str, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, sy + 78,  fb_str, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, sy + 104, "Double Buffer :  3.2 MB Hardware Backbuffer (0x200000)", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, sy + 130, "Fast Blit     :  Hardware Enhanced REP MOVSL Accelerated", COLOR_GREEN, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(cx, sy,       res_str, COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, sy + 26,  bpp_str, COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, sy + 52,  pitch_str, COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, sy + 78,  fb_str, COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, sy + 104, "Double Buffer :  3.0 MB Hardware Buffer (0x200000)", COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, sy + 130, "Fast Blit     :  Hardware REP MOVSL Accelerated", COLOR_GREEN, COLOR_TRANSPARENT, cw - 8);
 
     } else if (active_tab == 4) {
         // Tab 4: About System
@@ -269,15 +268,15 @@ static void settings_draw(window_t *win) {
         gfx_draw_line(cx, ay, cx + cw, ay, COLOR_BORDER);
 
         ay += 16;
-        gfx_draw_string(cx, ay,       "Architecture :  Intel x86 (32-bit Protected Mode)", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, ay + 24,  "Memory Model :  Ring 0 Flat Model with 1MB Stack (0x1FFFF0)", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, ay + 48,  "File Systems :  FAT16 Hard Disk & ISO9660 El Torito CD-ROM", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, ay + 72,  "Input Engine :  PS/2 Mouse (200Hz) & PS/2 Keyboard IRQ", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, ay + 96,  "Timer & RTC  :  100 Hz PIT & CMOS Hardware Real-Time Clock", COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(cx, ay,       "Architecture :  Intel x86 (32-bit Protected Mode)", COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, ay + 24,  "Memory Model :  Ring 0 Flat Model (1MB Stack)", COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, ay + 48,  "File Systems :  ATA FAT16 Disk & ISO9660 CD-ROM", COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, ay + 72,  "Input Engine :  PS/2 Mouse (200Hz) & Keyboard IRQ", COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
+        gfx_draw_string_clipped(cx, ay + 96,  "Timer & RTC  :  100 Hz PIT & CMOS Real-Time Clock", COLOR_TEXT, COLOR_TRANSPARENT, cw - 8);
 
         char up_str[48];
         snprintf(up_str, sizeof(up_str), "System Uptime:  %u seconds (%u ticks)", pit_get_uptime_seconds(), pit_get_ticks());
-        gfx_draw_string(cx, ay + 120, up_str, COLOR_GREEN, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(cx, ay + 120, up_str, COLOR_GREEN, COLOR_TRANSPARENT, cw - 8);
     }
 }
 
@@ -301,14 +300,10 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
     int cw = win->width - sb_w - 32;
 
     if (active_tab == 0) {
-        int col_w = (cw - 12) / 2;
         int count = wallpaper_get_count();
         for (int i = 0; i < count; i++) {
-            int col = i / 3;
-            int row = i % 3;
-            int bx = cx + (col * (col_w + 12));
-            int by = 60 + (row * 68);
-            if (rx >= bx && rx <= bx + col_w && ry >= by && ry <= by + 60) {
+            int by = 60 + (i * 54);
+            if (rx >= cx && rx <= cx + cw && ry >= by && ry <= by + 48) {
                 set_desktop_theme(i);
                 return;
             }
@@ -371,7 +366,7 @@ void app_settings_open_tab(int tab) {
 }
 
 void app_settings_launch(void) {
-    window_t *win = wm_create_window("Settings Control Panel", 200, 90, 560, 420, RGB(28, 30, 44));
+    window_t *win = wm_create_window("Settings Control Panel", 190, 80, 580, 430, RGB(28, 30, 44));
     if (!win) return;
     win->draw_client = settings_draw;
     win->on_click = settings_click;

@@ -491,11 +491,8 @@ static void draw_taskbar(void) {
         gfx_fillrect(btn_x, tb_y + 6, tab_w, 36, tab_bg);
         gfx_drawrect(btn_x, tb_y + 6, tab_w, 36, is_act ? COLOR_ACCENT : COLOR_BORDER);
 
-        // Truncate title to fit button
-        char title_buf[12];
-        strncpy(title_buf, win->title, 11);
-        title_buf[11] = '\0';
-        gfx_draw_string(btn_x + 6, tb_y + 16, title_buf, tab_fg, COLOR_TRANSPARENT);
+        // Render title clipped to taskbar button width
+        gfx_draw_string_clipped(btn_x + 8, tb_y + 16, win->title, tab_fg, COLOR_TRANSPARENT, tab_w - 14);
 
         btn_x += tab_stride;
     }
@@ -781,13 +778,22 @@ static void draw_login_screen(void) {
 
     // Status or Error Message
     if (login_error) {
-        gfx_draw_string(card_x + 40, card_y + 236, "[!] Incorrect password. Try again.", COLOR_RED, COLOR_TRANSPARENT);
+        const char *err_s = "[!] Incorrect password. Try again.";
+        int ex = (card_w - (strlen(err_s) * 8)) / 2;
+        if (ex < 10) ex = 10;
+        gfx_draw_string_clipped(card_x + ex, card_y + 236, err_s, COLOR_RED, COLOR_TRANSPARENT, card_w - 20);
     } else {
-        gfx_draw_string(card_x + 48, card_y + 236, "Press Enter or click Log In to unlock", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        const char *inf_s = "Press Enter or click Log In to unlock";
+        int ix = (card_w - (strlen(inf_s) * 8)) / 2;
+        if (ix < 10) ix = 10;
+        gfx_draw_string_clipped(card_x + ix, card_y + 236, inf_s, COLOR_TEXT_MUTED, COLOR_TRANSPARENT, card_w - 20);
     }
 
     // Hint
-    gfx_draw_string(card_x + 40, card_y + 262, "(Password configured during installation)", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    const char *hint_s = "(Password configured during installation)";
+    int hx = (card_w - (strlen(hint_s) * 8)) / 2;
+    if (hx < 10) hx = 10;
+    gfx_draw_string_clipped(card_x + hx, card_y + 262, hint_s, COLOR_TEXT_MUTED, COLOR_TRANSPARENT, card_w - 20);
 
     // 5. Bottom System Bar
     gfx_fillrect(0, h - 40, w, 40, RGB(14, 16, 24));
@@ -984,7 +990,7 @@ void kernel_main(boot_info_t *bi) {
                 } else if (key == 's' || key == 'S' || (start_menu_open && key == '6')) {
                     app_settings_launch();
                     start_menu_open = 0;
-                } else if (start_menu_open && key == '7') {
+                } else if (key == 'y' || key == 'Y' || (start_menu_open && key == '7')) {
                     app_sysinfo_launch();
                     start_menu_open = 0;
                 }

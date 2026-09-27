@@ -224,6 +224,28 @@ void gfx_draw_string(int x, int y, const char *str, unsigned int fg, unsigned in
     }
 }
 
+void gfx_draw_string_clipped(int x, int y, const char *str, unsigned int fg, unsigned int bg, int max_w) {
+    if (!str || max_w <= 0) return;
+    int cx = x;
+    while (*str) {
+        if (*str == '\n') {
+            cx = x;
+            y += 18;
+        } else {
+            if (cx + 8 > x + max_w) {
+                if (cx >= x + 16) {
+                    gfx_draw_char(cx - 16, y, '.', fg, bg);
+                    gfx_draw_char(cx - 8, y, '.', fg, bg);
+                }
+                break;
+            }
+            gfx_draw_char(cx, y, *str, fg, bg);
+            cx += 8;
+        }
+        str++;
+    }
+}
+
 void gfx_draw_string_shadow(int x, int y, const char *str, unsigned int fg, unsigned int shadow_color) {
     gfx_draw_string(x + 1, y + 1, str, shadow_color, COLOR_TRANSPARENT);
     gfx_draw_string(x, y, str, fg, COLOR_TRANSPARENT);

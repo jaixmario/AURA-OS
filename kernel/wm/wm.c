@@ -287,9 +287,9 @@ void wm_render(void) {
         gfx_fill_circle(win->x + 34, win->y + 16, 6, COLOR_BTN_MIN);
         gfx_fill_circle(win->x + 52, win->y + 16, 6, COLOR_BTN_MAX);
 
-        // Title text
+        // Title text (clipped to window width)
         unsigned int title_col = is_act ? COLOR_WHITE : COLOR_TEXT_MUTED;
-        gfx_draw_string(win->x + 72, win->y + 8, win->title, title_col, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(win->x + 72, win->y + 8, win->title, title_col, COLOR_TRANSPARENT, win->width - 80);
 
         // Client background
         gfx_fillrect(win->x, win->y + TITLEBAR_HEIGHT, win->width, win->height - TITLEBAR_HEIGHT, win->bg_color);

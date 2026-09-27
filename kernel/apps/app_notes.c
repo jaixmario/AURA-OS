@@ -4,9 +4,10 @@
 #include "../arch/pit.h"
 #include "../libc/string.h"
 
-#define NOTES_MAX_CHARS 2048
+#define NOTES_MAX_CHARS 32768
 
-static char notes_buffer[NOTES_MAX_CHARS];
+// Map 32KB document editor buffer to extended memory (14MB mark, 0x00E00000)
+static char * const notes_buffer = (char *)0x00E00000;
 static int notes_len = 0;
 static int notes_cursor = 0;
 static char current_filename[VFS_MAX_FILENAME] = "NOTES.TXT";
@@ -272,7 +273,7 @@ static void notes_draw(window_t *win) {
     snprintf(stat_mid, sizeof(stat_mid), "Ln %d | %d Chars", line_idx, notes_len);
     gfx_draw_string(wx + 150, status_y + 5, stat_mid, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
-    gfx_draw_string(wx + 300, status_y + 5, status_msg, COLOR_ACCENT, COLOR_TRANSPARENT);
+    gfx_draw_string_clipped(wx + 300, status_y + 5, status_msg, COLOR_ACCENT, COLOR_TRANSPARENT, client_w - 310);
 
     // 4. File Picker Modal Overlay (when open)
     if (file_picker_open) {
@@ -694,7 +695,7 @@ void app_notes_launch(void) {
     notes_init_buffer();
     char title[64];
     snprintf(title, sizeof(title), "Notes - %s", current_filename);
-    notes_win = wm_create_window(title, 220, 130, 540, 380, RGB(22, 25, 38));
+    notes_win = wm_create_window(title, 200, 100, 580, 420, RGB(22, 25, 38));
     if (!notes_win) return;
     notes_win->draw_client = notes_draw;
     notes_win->on_key = notes_key;
@@ -725,7 +726,7 @@ void app_notes_open_file(const char *filename) {
         wm_restore_window(notes_win);
         wm_focus_window(notes_win);
     } else {
-        notes_win = wm_create_window(title, 220, 130, 540, 380, RGB(22, 25, 38));
+        notes_win = wm_create_window(title, 200, 100, 580, 420, RGB(22, 25, 38));
         if (!notes_win) return;
         notes_win->draw_client = notes_draw;
         notes_win->on_key = notes_key;
@@ -752,7 +753,7 @@ void app_notes_load_text(const char *text) {
         wm_restore_window(notes_win);
         wm_focus_window(notes_win);
     } else {
-        notes_win = wm_create_window(title, 220, 130, 540, 380, RGB(22, 25, 38));
+        notes_win = wm_create_window(title, 200, 100, 580, 420, RGB(22, 25, 38));
         if (!notes_win) return;
         notes_win->draw_client = notes_draw;
         notes_win->on_key = notes_key;

@@ -102,19 +102,19 @@ static void installer_draw_step_welcome(int cx, int cy, int cw) {
     char line1[64], line2[64], line3[64], line4[64], line5[64];
     snprintf(line1, sizeof(line1), "- Boot Mode     : Live CD / Bootable ISO Media");
     snprintf(line2, sizeof(line2), "- Architecture  : i686 32-bit Protected Mode");
-    snprintf(line3, sizeof(line3), "- Video Engine  : VESA VBE (1024x768 TrueColor Linear LFB)");
-    snprintf(line4, sizeof(line4), "- Target Storage: Primary Master ATA (0x1F0-0x1F7)");
+    snprintf(line3, sizeof(line3), "- Video Engine  : VESA VBE 1024x768 TrueColor");
+    snprintf(line4, sizeof(line4), "- Target Storage: Primary Master ATA (0x1F0)");
     if (disk_ok) {
         snprintf(line5, sizeof(line5), "- Detected Disk : %s (%s)", ata_get_model(), cap_str);
     } else {
         snprintf(line5, sizeof(line5), "- Detected Disk : [!] No ATA Hard Disk detected");
     }
 
-    gfx_draw_string(cx + 16, card_y + 36, line1, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 60, line2, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 84, line3, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 108, line4, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 132, line5, disk_ok ? COLOR_GREEN : COLOR_RED, COLOR_TRANSPARENT);
+    gfx_draw_string_clipped(cx + 16, card_y + 36, line1, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 60, line2, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 84, line3, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 108, line4, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 132, line5, disk_ok ? COLOR_GREEN : COLOR_RED, COLOR_TRANSPARENT, cw - 32);
 
     if (!disk_ok) {
         gfx_draw_string(cx, card_y + card_h + 12, "[!] Please attach an IDE/ATA hard disk to install AuraOS.", COLOR_RED, COLOR_TRANSPARENT);
@@ -239,11 +239,11 @@ static void installer_draw_step_disk(int cx, int cy, int cw) {
         snprintf(l3, sizeof(l3), "- MBR Boot   : Sector 0 (Active FAT16 Partition 1)");
         snprintf(l4, sizeof(l4), "- VFS Storage: LBA 512 (Superblock) & Clusters");
 
-        gfx_draw_string(cx + 14, card_y + 10, "Target Hard Disk:", COLOR_WHITE, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 32, l1, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 54, l2, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 76, l3, COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 98, l4, COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(cx + 14, card_y + 10, "Target Hard Disk:", COLOR_WHITE, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 32, l1, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 54, l2, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 76, l3, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 98, l4, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
     }
 
     // Selected Installation Mode Radio Box
@@ -329,15 +329,15 @@ static void installer_draw_step_complete(int cx, int cy, int cw) {
     char l1[64], l2[64], l3[64], l4[64], l5[64];
     snprintf(l1, sizeof(l1), "- User Name     : %s (%s)", in_fullname, in_username);
     snprintf(l2, sizeof(l2), "- Computer Name : %s", in_hostname);
-    snprintf(l3, sizeof(l3), "- Boot Target   : Primary Master ATA Hard Disk (Sector 0 MBR)");
-    snprintf(l4, sizeof(l4), "- Storage State : Installed & Persistent (VFS Synced)");
-    snprintf(l5, sizeof(l5), "- Next Step     : Remove CD/ISO media and boot from disk.");
+    snprintf(l3, sizeof(l3), "- Boot Target   : Primary ATA Hard Disk (MBR)");
+    snprintf(l4, sizeof(l4), "- Storage State : Installed & Persistent (VFS)");
+    snprintf(l5, sizeof(l5), "- Next Step     : Eject ISO media and boot disk");
 
-    gfx_draw_string(cx + 16, card_y + 36, l1, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 60, l2, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 84, l3, COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 108, l4, COLOR_GREEN, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 16, card_y + 132, l5, COLOR_ACCENT, COLOR_TRANSPARENT);
+    gfx_draw_string_clipped(cx + 16, card_y + 36, l1, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 60, l2, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 84, l3, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 108, l4, COLOR_GREEN, COLOR_TRANSPARENT, cw - 32);
+    gfx_draw_string_clipped(cx + 16, card_y + 132, l5, COLOR_ACCENT, COLOR_TRANSPARENT, cw - 32);
 
     // Bottom Action Buttons
     int btn_y = card_y + card_h + 30;

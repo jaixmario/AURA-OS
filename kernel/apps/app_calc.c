@@ -80,7 +80,8 @@ static void calc_draw(window_t *win) {
     // Display text (right aligned)
     int text_len = strlen(calc_display);
     int text_x = start_x + 240 - (text_len * 8) - 12;
-    gfx_draw_string(text_x, start_y + 16, calc_display, COLOR_WHITE, COLOR_TRANSPARENT);
+    if (text_x < start_x + 28) text_x = start_x + 28;
+    gfx_draw_string_clipped(text_x, start_y + 16, calc_display, COLOR_WHITE, COLOR_TRANSPARENT, (start_x + 240 - 12) - text_x);
 
     // Buttons (4x4)
     int btn_start_y = start_y + 64;

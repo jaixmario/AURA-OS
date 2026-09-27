@@ -55,6 +55,7 @@ void gfx_draw_shadow(int x, int y, int w, int h, int blur);
 
 void gfx_draw_char(int x, int y, char c, unsigned int fg, unsigned int bg);
 void gfx_draw_string(int x, int y, const char *str, unsigned int fg, unsigned int bg);
+void gfx_draw_string_clipped(int x, int y, const char *str, unsigned int fg, unsigned int bg, int max_w);
 void gfx_draw_string_shadow(int x, int y, const char *str, unsigned int fg, unsigned int shadow_color);
 
 void gfx_draw_cursor(int x, int y);

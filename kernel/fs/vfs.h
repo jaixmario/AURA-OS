@@ -3,8 +3,8 @@
 
 #define VFS_MAX_FILENAME 32
 #define VFS_MAX_FOLDER   32
-#define VFS_MAX_FILES    32
-#define VFS_MAX_FILESIZE 2048
+#define VFS_MAX_FILES    128
+#define VFS_MAX_FILESIZE 32768
 
 #define FS_ATTR_READONLY 0x01
 #define FS_ATTR_SYSTEM   0x02

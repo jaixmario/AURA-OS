@@ -187,7 +187,7 @@ static void paint_draw(window_t *win) {
                             (active_tool == 1) ? "Brush 3px" :
                             (active_tool == 2) ? "Marker 6px" : "Eraser";
     snprintf(stat_buf, sizeof(stat_buf), "Tool: %s  |  Pos: %d, %d  |  Size: 480x280", tool_name, hover_x, hover_y);
-    gfx_draw_string(wx + 16, status_y + 5, stat_buf, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_draw_string_clipped(wx + 16, status_y + 5, stat_buf, COLOR_TEXT_MUTED, COLOR_TRANSPARENT, win->width - 32);
 }
 
 static void paint_click(window_t *win, int rx, int ry, int btn) {

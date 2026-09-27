@@ -284,10 +284,11 @@ static void term_execute_command(void) {
 static void term_draw(window_t *win) {
     int start_y = win->y + TITLEBAR_HEIGHT + 8;
     int x = win->x + 12;
+    int max_w = win->width - 24;
 
     // Draw previous lines
     for (int i = 0; i < term_line_count; i++) {
-        gfx_draw_string(x, start_y + (i * 18), term_lines[i], COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string_clipped(x, start_y + (i * 18), term_lines[i], COLOR_TEXT, COLOR_TRANSPARENT, max_w);
     }
 
     // Draw active prompt
@@ -296,13 +297,20 @@ static void term_draw(window_t *win) {
     snprintf(prompt_str, sizeof(prompt_str), "%s@%s:C:\\%s> ",
              sys_get_username(), sys_get_hostname(), term_cwd);
     int prompt_len = strlen(prompt_str);
-    gfx_draw_string(x, prompt_y, prompt_str, COLOR_GREEN, COLOR_TRANSPARENT);
-    gfx_draw_string(x + (prompt_len * 8), prompt_y, input_buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    int prompt_w = prompt_len * 8;
+    if (prompt_w > max_w - 40) prompt_w = max_w - 40;
+
+    gfx_draw_string_clipped(x, prompt_y, prompt_str, COLOR_GREEN, COLOR_TRANSPARENT, prompt_w);
+    int input_max_w = max_w - prompt_w;
+    if (input_max_w < 10) input_max_w = 10;
+    gfx_draw_string_clipped(x + prompt_w, prompt_y, input_buf, COLOR_WHITE, COLOR_TRANSPARENT, input_max_w);
 
     // Blinking cursor
     if ((pit_get_ticks() / 30) % 2 == 0) {
-        int cursor_x = x + (prompt_len * 8) + (input_len * 8);
-        gfx_fillrect(cursor_x, prompt_y, 8, 16, COLOR_ACCENT);
+        int cursor_x = x + prompt_w + (input_len * 8);
+        if (cursor_x < win->x + win->width - 12) {
+            gfx_fillrect(cursor_x, prompt_y, 8, 16, COLOR_ACCENT);
+        }
     }
 }
 
