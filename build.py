@@ -47,6 +47,8 @@ def main():
         os.path.join(KERNEL_DIR, "arch", "ata.c"),
         os.path.join(KERNEL_DIR, "gfx", "font.c"),
         os.path.join(KERNEL_DIR, "gfx", "gfx.c"),
+        os.path.join(KERNEL_DIR, "gfx", "picojpeg.c"),
+        os.path.join(KERNEL_DIR, "gfx", "wallpaper.c"),
         os.path.join(KERNEL_DIR, "wm", "wm.c"),
         os.path.join(KERNEL_DIR, "fs", "vfs.c"),
         os.path.join(KERNEL_DIR, "apps", "app_term.c"),
@@ -71,6 +73,8 @@ def main():
         "-mno-80387",
         "-Wall",
         "-Wextra",
+        "-Wno-shift-negative-value",
+        "-Wno-unsequenced",
         "-I" + KERNEL_DIR
     ]
 

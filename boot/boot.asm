@@ -24,14 +24,14 @@ start:
     int 0x13
 
     mov si, dap
-    mov bp, 4                  ; 4 chunks of 64 sectors = 256 sectors (128 KB)
+    mov bp, 10                 ; 10 chunks of 64 sectors = 640 sectors (320 KB)
 .read_loop:
     mov dl, [boot_drive]
     mov ah, 0x42
     int 0x13
     jc disk_error
-    add word [si + 6], 0x0800  ; Next segment: +32KB (0x1000 -> 0x1800 -> 0x2000 -> 0x2800)
-    add word [si + 8], 64      ; Next LBA sector: +64 (1 -> 65 -> 129 -> 193)
+    add word [si + 6], 0x0800  ; Next segment: +32KB (0x1000 -> 0x1800 -> 0x2000 ...)
+    add word [si + 8], 64      ; Next LBA sector: +64
     dec bp
     jnz .read_loop
 
@@ -173,12 +173,12 @@ pm_start:
     mov ss, ax
     mov esp, 0x1FFFF0
 
-    ; If CD-ROM boot, copy 128KB kernel backwards from 0x7E00 to 0x10000
+    ; If CD-ROM boot, copy 320KB kernel backwards from 0x7E00 to 0x10000
     cmp byte [0x700F], 1
     jne .jump_kernel
-    mov esi, 0x7E00 + 131072 - 4
-    mov edi, 0x10000 + 131072 - 4
-    mov ecx, 32768
+    mov esi, 0x7E00 + 327680 - 4
+    mov edi, 0x10000 + 327680 - 4
+    mov ecx, 81920
     std
     rep movsd
     cld

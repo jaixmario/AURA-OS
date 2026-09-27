@@ -7,6 +7,7 @@
 #include "arch/io.h"
 #include "fs/vfs.h"
 #include "gfx/gfx.h"
+#include "gfx/wallpaper.h"
 #include "wm/wm.h"
 #include "apps/apps.h"
 #include "libc/string.h"
@@ -152,59 +153,35 @@ static void load_user_profile(void) {
     vfs_file_t *sys = vfs_find("SYSTEM.CFG");
     if (sys && sys->size > 0) {
         char *th = strstr(sys->data, "THEME=");
+        if (!th) th = strstr(sys->data, "WALLPAPER=");
         if (th) {
             int t = th[6] - '0';
-            if (t >= 0 && t < 8) {
-                current_theme = t;
+            if (t >= 0 && t < wallpaper_get_count()) {
+                wallpaper_set(t);
             }
         }
     }
 }
 
-#define THEME_COUNT 8
-
-static const char *g_theme_names[THEME_COUNT] = {
-    "Deep Nebula",
-    "Midnight Slate",
-    "Cyberpunk Neon",
-    "Emerald Forest",
-    "Sunset Dunes",
-    "Matrix Cyber",
-    "Nordic Frost",
-    "Solar Flare"
-};
-
-static const char *g_theme_descs[THEME_COUNT] = {
-    "Cosmic violet & starry sky",
-    "Minimalist stealth obsidian",
-    "Synthwave sunset & grid",
-    "Pine green woodland & peaks",
-    "Warm crimson & amber glow",
-    "Terminal black & data stream",
-    "Glacial midnight & ice peaks",
-    "Obsidian & radiant solar gold"
-};
-
 int get_theme_count(void) {
-    return THEME_COUNT;
+    return wallpaper_get_count();
 }
 
 const char *get_theme_name(int theme) {
-    if (theme >= 0 && theme < THEME_COUNT) return g_theme_names[theme];
-    return "Unknown";
+    return wallpaper_get_name(theme);
 }
 
 const char *get_theme_desc(int theme) {
-    if (theme >= 0 && theme < THEME_COUNT) return g_theme_descs[theme];
-    return "";
+    return wallpaper_get_desc(theme);
 }
 
 void set_desktop_theme(int theme) {
-    if (theme >= 0 && theme < THEME_COUNT) {
-        current_theme = theme;
+    if (theme >= 0 && theme < wallpaper_get_count()) {
+        wallpaper_set(theme);
         vfs_file_t *cfg = vfs_find("SYSTEM.CFG");
         if (cfg && cfg->size > 0) {
             char *th = strstr(cfg->data, "THEME=");
+            if (!th) th = strstr(cfg->data, "WALLPAPER=");
             if (th) {
                 th[6] = '0' + theme;
                 vfs_write_file("SYSTEM.CFG", cfg->data, cfg->size);
@@ -214,7 +191,7 @@ void set_desktop_theme(int theme) {
 }
 
 int get_desktop_theme(void) {
-    return current_theme;
+    return wallpaper_get_current();
 }
 
 boot_info_t *get_boot_info(void) {
@@ -222,183 +199,16 @@ boot_info_t *get_boot_info(void) {
 }
 
 static void draw_wallpaper(void) {
+    wallpaper_draw_desktop();
+
+    // Centered Desktop Brand Watermark with drop shadow
     int w = gfx_get_width();
     int h = gfx_get_height();
-
-    unsigned int top_col = RGB(22, 24, 38);
-    unsigned int bot_col = RGB(34, 37, 56);
-    unsigned int accent_grid = RGB(48, 52, 78);
-
-    if (current_theme == 0) { // Deep Nebula
-        top_col = RGB(16, 12, 32);
-        bot_col = RGB(32, 26, 54);
-        accent_grid = RGB(65, 55, 95);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Starfield (deterministic stars using hash)
-        for (int i = 0; i < 70; i++) {
-            int sx = ((i * 137 + 43) * 19) % w;
-            int sy = ((i * 223 + 17) * 23) % (h - 220);
-            unsigned int star_col = (i % 3 == 0) ? RGB(255, 255, 255) :
-                                    (i % 3 == 1) ? RGB(180, 190, 255) : RGB(220, 160, 255);
-            gfx_putpixel(sx, sy, star_col);
-            if (i % 7 == 0) {
-                gfx_putpixel(sx + 1, sy, star_col);
-                gfx_putpixel(sx, sy + 1, star_col);
-            }
-        }
-        // Horizon glow
-        for (int y = h - 180; y < h - 48; y += 22) {
-            int dy = y - (h - 180);
-            gfx_draw_line(0, y, w, y, RGB(38 + dy / 8, 32 + dy / 8, 70 + dy / 4));
-        }
-
-    } else if (current_theme == 1) { // Midnight Slate
-        top_col = RGB(10, 12, 18);
-        bot_col = RGB(22, 26, 36);
-        accent_grid = RGB(38, 44, 62);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Minimalist fine grid dots
-        for (int gy = 40; gy < h - 60; gy += 48) {
-            for (int gx = 40; gx < w; gx += 48) {
-                gfx_putpixel(gx, gy, RGB(45, 52, 72));
-            }
-        }
-        gfx_draw_line(0, h - 140, w, h - 140, RGB(28, 34, 48));
-
-    } else if (current_theme == 2) { // Cyberpunk Neon
-        top_col = RGB(36, 12, 46);
-        bot_col = RGB(14, 20, 48);
-        accent_grid = RGB(85, 30, 95);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Synthwave Sun on horizon
-        int sun_cx = w / 2;
-        int sun_cy = h - 160;
-        for (int r = 70; r > 0; r -= 4) {
-            int glow = (70 - r) * 2;
-            unsigned int c = RGB(245, 120 + glow / 2, 80 + glow / 3);
-            gfx_draw_circle(sun_cx, sun_cy, r, c);
-        }
-
-        // Perspective grid lines on floor
-        int horizon_y = h - 150;
-        gfx_draw_line(0, horizon_y, w, horizon_y, RGB(245, 120, 180));
-        for (int y = horizon_y + 12; y < h - 48; y += (y - horizon_y) / 2 + 8) {
-            gfx_draw_line(0, y, w, y, RGB(180, 50, 140));
-        }
-        for (int gx = 0; gx <= w; gx += 70) {
-            gfx_draw_line(sun_cx, horizon_y, gx, h - 48, RGB(80, 40, 110));
-        }
-
-    } else if (current_theme == 3) { // Emerald Forest
-        top_col = RGB(10, 24, 20);
-        bot_col = RGB(18, 48, 38);
-        accent_grid = RGB(30, 68, 54);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Mountain ridge silhouettes
-        int my0 = h - 220;
-        for (int x = 0; x < w; x++) {
-            int peak1 = my0 + ((x * 37) % 70) - 35;
-            int peak2 = my0 + 40 + ((x * 53 + 120) % 50) - 25;
-            if (x % 3 == 0) {
-                gfx_draw_line(x, peak1, x, h - 48, RGB(14, 34, 28));
-                gfx_draw_line(x, peak2, x, h - 48, RGB(20, 50, 40));
-            }
-        }
-        for (int y = h - 140; y < h - 48; y += 18) {
-            int dy = y - (h - 140);
-            gfx_draw_line(0, y, w, y, RGB(22 + dy / 6, 58 + dy / 4, 46 + dy / 6));
-        }
-
-    } else if (current_theme == 4) { // Sunset Dunes
-        top_col = RGB(46, 16, 32);
-        bot_col = RGB(68, 32, 22);
-        accent_grid = RGB(105, 50, 40);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Golden sunset aura
-        int sun_x = w - 240;
-        int sun_y = h - 200;
-        for (int r = 60; r > 0; r -= 3) {
-            unsigned int c = RGB(250, 160 + (60 - r), 60);
-            gfx_draw_circle(sun_x, sun_y, r, c);
-        }
-
-        // Curved sand dunes lines
-        for (int x = 0; x < w; x += 2) {
-            int dune_y1 = (h - 170) + ((x * 10) % 40);
-            int dune_y2 = (h - 120) + (((w - x) * 14) % 35);
-            gfx_draw_line(x, dune_y1, x, h - 48, RGB(60, 26, 20));
-            gfx_draw_line(x, dune_y2, x, h - 48, RGB(74, 36, 22));
-        }
-
-    } else if (current_theme == 5) { // Matrix Cyber
-        top_col = RGB(6, 10, 8);
-        bot_col = RGB(12, 20, 16);
-        accent_grid = RGB(20, 70, 40);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Matrix digital stream columns
-        for (int col = 20; col < w; col += 36) {
-            int start_y = ((col * 17) % 200);
-            int len = 80 + ((col * 31) % 120);
-            for (int y = start_y; y < start_y + len && y < h - 48; y += 16) {
-                unsigned int c = (y > start_y + len - 20) ? RGB(160, 255, 180) :
-                                 (y > start_y + len - 50) ? RGB(50, 200, 90) : RGB(20, 100, 40);
-                gfx_draw_char(col, y, '0' + ((col + y) % 10), c, COLOR_TRANSPARENT);
-            }
-        }
-        gfx_draw_line(0, h - 90, w, h - 90, RGB(20, 120, 60));
-
-    } else if (current_theme == 6) { // Nordic Frost
-        top_col = RGB(12, 22, 38);
-        bot_col = RGB(26, 48, 72);
-        accent_grid = RGB(60, 95, 130);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        // Glacial peaks
-        for (int x = 0; x < w; x += 4) {
-            int peak = (h - 200) + ((x * 47) % 65) - 30;
-            gfx_draw_line(x, peak, x, h - 48, RGB(20, 40, 62));
-            gfx_putpixel(x, peak, RGB(220, 240, 255));
-        }
-        for (int y = h - 150; y < h - 48; y += 20) {
-            int dy = y - (h - 150);
-            gfx_draw_line(0, y, w, y, RGB(30 + dy / 5, 55 + dy / 4, 80 + dy / 3));
-        }
-
-    } else { // Solar Flare (Theme 7)
-        top_col = RGB(18, 16, 18);
-        bot_col = RGB(36, 28, 18);
-        accent_grid = RGB(85, 65, 30);
-        gfx_gradient_v(0, 0, w, h - 48, top_col, bot_col);
-
-        int flare_x = 180;
-        int flare_y = h - 180;
-        for (int r = 80; r > 0; r -= 4) {
-            unsigned int c = RGB(255, 180 + (80 - r) / 2, 40);
-            gfx_draw_circle(flare_x, flare_y, r, c);
-        }
-        for (int deg = 0; deg < 12; deg++) {
-            int rx = flare_x + deg * 25;
-            int ry = flare_y - deg * 15;
-            gfx_draw_line(flare_x, flare_y, rx, ry, RGB(90, 70, 30));
-        }
-        for (int y = h - 130; y < h - 48; y += 20) {
-            int dy = y - (h - 130);
-            gfx_draw_line(0, y, w, y, RGB(45 + dy / 5, 35 + dy / 6, 20 + dy / 8));
-        }
-    }
-
-    // Centered Desktop Brand Watermark
-    gfx_draw_string(w / 2 - 40, h / 2 - 30, "✦ AURA OS", accent_grid, COLOR_TRANSPARENT);
+    gfx_draw_string_shadow(w / 2 - 40, h / 2 - 30, "* AURA OS", COLOR_WHITE, COLOR_SHADOW);
     if (!sys_is_installed()) {
-        gfx_draw_string(w / 2 - 76, h / 2 - 10, "Live Installation Media", accent_grid, COLOR_TRANSPARENT);
+        gfx_draw_string_shadow(w / 2 - 76, h / 2 - 10, "Live Installation Media", RGB(220, 230, 255), COLOR_SHADOW);
     } else {
-        gfx_draw_string(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", accent_grid, COLOR_TRANSPARENT);
+        gfx_draw_string_shadow(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", RGB(220, 230, 255), COLOR_SHADOW);
     }
 }
 
@@ -776,13 +586,8 @@ static void draw_login_screen(void) {
     int w = gfx_get_width();
     int h = gfx_get_height();
 
-    // 1. Wallpaper background
-    draw_wallpaper();
-
-    // 2. Dimmed lockscreen backdrop overlay
-    for (int y = 0; y < h; y += 2) {
-        gfx_draw_line(0, y, w, y, RGB(10, 12, 20));
-    }
+    // 1. Tinted photographic wallpaper backdrop
+    wallpaper_draw_tinted();
 
     // 3. Top Clock & Date
     char time_str[32];
@@ -999,6 +804,9 @@ void kernel_main(boot_info_t *bi) {
 
     // 7. Initialize Graphics Subsystem
     gfx_init(bi);
+
+    // Initialize Real Photographic Wallpaper Engine
+    wallpaper_init();
 
     // 8. Initialize Window Manager
     wm_init();

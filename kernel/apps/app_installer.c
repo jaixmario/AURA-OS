@@ -371,11 +371,11 @@ static void installer_perform_disk_write(void) {
     install_stage = 1;
     install_progress = 25;
 
-    // 2. Write 32-bit Protected Mode Kernel to Sectors 1..256 (128 KB from 0x10000)
-    strncpy(install_status_msg, "Writing Protected Mode Kernel to LBA 1..256...", sizeof(install_status_msg));
-    res = ata_write_sectors(1, 256, (const void *)0x10000);
+    // 2. Write 32-bit Protected Mode Kernel to Sectors 1..640 (320 KB from 0x10000)
+    strncpy(install_status_msg, "Writing Protected Mode Kernel to LBA 1..640...", sizeof(install_status_msg));
+    res = ata_write_sectors(1, 640, (const void *)0x10000);
     if (res != 0) {
-        strncpy(install_status_msg, "Error: Failed to write Kernel to sectors 1..256!", sizeof(install_status_msg));
+        strncpy(install_status_msg, "Error: Failed to write Kernel to sectors 1..640!", sizeof(install_status_msg));
         return;
     }
     install_stage = 2;

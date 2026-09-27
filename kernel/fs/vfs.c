@@ -5,10 +5,10 @@
 
 #define ATA_FS_MAGIC         0x41555241 // 'AURA'
 #define ATA_FS_VERSION       1
-#define ATA_FS_SUPER_LBA     512
+#define ATA_FS_SUPER_LBA     800
 #define ATA_FS_SUPER_SECTORS 8
 #define ATA_SECTORS_PER_FILE 4
-#define ATA_FS_DATA_LBA      520
+#define ATA_FS_DATA_LBA      808
 
 typedef struct {
     char name[VFS_MAX_FILENAME];

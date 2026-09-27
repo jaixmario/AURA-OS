@@ -1,6 +1,7 @@
 #include "apps.h"
 #include "../kernel.h"
 #include "../gfx/gfx.h"
+#include "../gfx/wallpaper.h"
 #include "../arch/mouse.h"
 #include "../arch/pit.h"
 #include "../arch/rtc.h"
@@ -63,42 +64,36 @@ static void settings_draw(window_t *win) {
 
     if (active_tab == 0) {
         // Tab 0: Themes & Personalization
-        gfx_draw_string(cx, cy, "Desktop Wallpapers & Themes", COLOR_WHITE, COLOR_TRANSPARENT);
-        gfx_draw_string(cx, cy + 18, "Select a background wallpaper style and color palette:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy, "Real Image Wallpapers", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy + 18, "Select a high-resolution photographic wallpaper:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
         int cur_theme = get_desktop_theme();
         int col_w = (cw - 12) / 2;
 
-        for (int i = 0; i < 8; i++) {
-            int col = i / 4;
-            int row = i % 4;
+        for (int i = 0; i < 6; i++) {
+            int col = i / 3;
+            int row = i % 3;
             int bx = cx + (col * (col_w + 12));
-            int by = cy + 44 + (row * 62);
+            int by = cy + 44 + (row * 68);
             int is_sel = (cur_theme == i);
 
-            gfx_fillrect(bx, by, col_w, 54, is_sel ? RGB(36, 40, 60) : RGB(26, 28, 40));
-            gfx_drawrect(bx, by, col_w, 54, is_sel ? COLOR_ACCENT : COLOR_BORDER);
+            gfx_fillrect(bx, by, col_w, 60, is_sel ? RGB(36, 40, 60) : RGB(26, 28, 40));
+            gfx_drawrect(bx, by, col_w, 60, is_sel ? COLOR_ACCENT : COLOR_BORDER);
 
-            unsigned int sw_col = (i == 0) ? RGB(160, 120, 240) :
-                                  (i == 1) ? RGB(90, 100, 120) :
-                                  (i == 2) ? RGB(245, 120, 180) :
-                                  (i == 3) ? RGB(40, 180, 120) :
-                                  (i == 4) ? RGB(245, 140, 60) :
-                                  (i == 5) ? RGB(40, 220, 80) :
-                                  (i == 6) ? RGB(120, 200, 245) : RGB(245, 200, 60);
+            unsigned int sw_col = wallpaper_get_color(i);
 
             if (is_sel) {
-                gfx_fill_circle(bx + 16, by + 27, 8, sw_col);
-                gfx_fill_circle(bx + 16, by + 27, 3, RGB(17, 17, 27));
+                gfx_fill_circle(bx + 16, by + 30, 8, sw_col);
+                gfx_fill_circle(bx + 16, by + 30, 3, RGB(17, 17, 27));
             } else {
-                gfx_fill_circle(bx + 16, by + 27, 7, sw_col);
+                gfx_fill_circle(bx + 16, by + 30, 7, sw_col);
             }
 
-            gfx_draw_string(bx + 30, by + 11, get_theme_name(i), is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
-            gfx_draw_string(bx + 30, by + 30, get_theme_desc(i), COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+            gfx_draw_string(bx + 30, by + 12, get_theme_name(i), is_sel ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+            gfx_draw_string(bx + 30, by + 32, get_theme_desc(i), COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
             if (is_sel) {
-                gfx_draw_string(bx + col_w - 56, by + 11, "[OK]", COLOR_ACCENT, COLOR_TRANSPARENT);
+                gfx_draw_string(bx + col_w - 60, by + 12, "[Active]", COLOR_ACCENT, COLOR_TRANSPARENT);
             }
         }
     } else if (active_tab == 1) {
@@ -306,12 +301,12 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
 
     if (active_tab == 0) {
         int col_w = (cw - 12) / 2;
-        for (int i = 0; i < 8; i++) {
-            int col = i / 4;
-            int row = i % 4;
+        for (int i = 0; i < 6; i++) {
+            int col = i / 3;
+            int row = i % 3;
             int bx = cx + (col * (col_w + 12));
-            int by = 60 + (row * 62);
-            if (rx >= bx && rx <= bx + col_w && ry >= by && ry <= by + 54) {
+            int by = 60 + (row * 68);
+            if (rx >= bx && rx <= bx + col_w && ry >= by && ry <= by + 60) {
                 set_desktop_theme(i);
                 return;
             }
