@@ -6,8 +6,8 @@
 
 #define NOTES_MAX_CHARS 32768
 
-// Map 32KB document editor buffer to extended memory (14MB mark, 0x00E00000)
-static char * const notes_buffer = (char *)0x00E00000;
+// Map 32KB document editor buffer to safe extended memory (40MB mark, 0x02800000)
+static char * const notes_buffer = (char *)0x02800000;
 static int notes_len = 0;
 static int notes_cursor = 0;
 static char current_filename[VFS_MAX_FILENAME] = "NOTES.TXT";

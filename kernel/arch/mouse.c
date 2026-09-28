@@ -198,3 +198,10 @@ void mouse_set_speed(int level) {
 int mouse_get_speed(void) {
     return mouse_speed_level;
 }
+
+void mouse_set_bounds(int screen_w, int screen_h) {
+    max_x = screen_w;
+    max_y = screen_h;
+    if (mouse_x >= max_x) mouse_x = max_x - 1;
+    if (mouse_y >= max_y) mouse_y = max_y - 1;
+}

@@ -27,6 +27,24 @@ int gfx_get_height(void) {
     return boot_info ? boot_info->height : 768;
 }
 
+unsigned int *gfx_get_backbuffer(void) {
+    return backbuffer;
+}
+
+void gfx_set_resolution(int w, int h, int pitch, int bpp) {
+    if (boot_info) {
+        boot_info->width = w;
+        boot_info->height = h;
+        boot_info->pitch = pitch;
+        boot_info->bpp = bpp;
+    }
+    clip_x0 = 0;
+    clip_y0 = 0;
+    clip_x1 = w;
+    clip_y1 = h;
+    memset(backbuffer, 0, w * h * sizeof(unsigned int));
+}
+
 void gfx_set_clip(int x, int y, int w, int h) {
     if (x < 0) x = 0;
     if (y < 0) y = 0;

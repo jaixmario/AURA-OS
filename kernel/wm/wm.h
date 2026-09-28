@@ -40,5 +40,6 @@ window_t *wm_get_active_window(void);
 window_t *wm_get_window_by_id(int id);
 int wm_get_window_count(void);
 window_t *wm_get_window_at_index(int idx);
+void wm_on_resolution_change(int new_w, int new_h);
 
 #endif

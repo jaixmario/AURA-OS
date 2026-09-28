@@ -36,8 +36,8 @@ typedef struct {
 } __attribute__((packed)) ata_superblock_t;
 
 static ata_superblock_t disk_sb;
-// Map 128-file in-memory cache directly to extended RAM at 9MB mark (0x900000-0xD10000)
-static vfs_file_t * const files = (vfs_file_t *)0x900000;
+// Map 128-file in-memory cache directly to extended RAM at 32MB mark (0x02000000)
+static vfs_file_t * const files = (vfs_file_t *)0x02000000;
 static int file_count = 0;
 static int disk_backed = 0;
 

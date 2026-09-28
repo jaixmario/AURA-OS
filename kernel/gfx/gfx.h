@@ -63,5 +63,7 @@ void gfx_swap_buffers(void);
 
 int gfx_get_width(void);
 int gfx_get_height(void);
+void gfx_set_resolution(int w, int h, int pitch, int bpp);
+unsigned int *gfx_get_backbuffer(void);
 
 #endif

@@ -9,6 +9,7 @@
 #include "gfx/gfx.h"
 #include "gfx/wallpaper.h"
 #include "wm/wm.h"
+#include "arch/display.h"
 #include "apps/apps.h"
 #include "libc/string.h"
 
@@ -282,6 +283,20 @@ static void load_system_settings(void) {
     int saved_spd = sys_get_setting_int("MOUSE_SPEED", 1);
     if (saved_spd >= 0 && saved_spd <= 2) {
         mouse_set_speed(saved_spd);
+    }
+
+    // 3. Restore Saved Display Resolution or Auto-Detect
+    int auto_detect = sys_get_setting_int("RES_AUTO", 0);
+    if (auto_detect) {
+        display_auto_detect();
+    } else {
+        int saved_w = sys_get_setting_int("RES_WIDTH", -1);
+        int saved_h = sys_get_setting_int("RES_HEIGHT", -1);
+        if (saved_w >= 640 && saved_h >= 480) {
+            if (saved_w != gfx_get_width() || saved_h != gfx_get_height()) {
+                display_set_resolution(saved_w, saved_h);
+            }
+        }
     }
 }
 
@@ -925,6 +940,7 @@ void kernel_main(boot_info_t *bi) {
 
     // 7. Initialize Graphics Subsystem
     gfx_init(bi);
+    display_init();
 
     // Initialize Real Photographic Wallpaper Engine
     wallpaper_init();

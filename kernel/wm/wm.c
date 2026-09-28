@@ -309,3 +309,30 @@ void wm_render(void) {
         gfx_drawrect(win->x, win->y, win->width, win->height, border_col);
     }
 }
+
+void wm_on_resolution_change(int new_w, int new_h) {
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        window_t *win = &windows[i];
+        if (!win->is_open) continue;
+
+        if (win->is_maximized) {
+            win->x = 0;
+            win->y = 0;
+            win->width = new_w;
+            win->height = new_h - 48;
+        } else {
+            if (win->width > new_w - 40) win->width = new_w - 40;
+            if (win->height > new_h - 80) win->height = new_h - 80;
+
+            if (win->x + win->width > new_w) {
+                win->x = new_w - win->width;
+                if (win->x < 0) win->x = 0;
+            }
+            if (win->y + win->height > new_h - 48) {
+                win->y = new_h - 48 - win->height;
+                if (win->y < 0) win->y = 0;
+            }
+        }
+    }
+}
+

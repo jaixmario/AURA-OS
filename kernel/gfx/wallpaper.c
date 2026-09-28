@@ -4,9 +4,16 @@
 #include "gfx.h"
 #include "../libc/string.h"
 
-static unsigned int *g_wallpaper_buf = (unsigned int *)0x500000;
+// Dedicated safe buffers in extended memory:
+// 0x00C00000 (12MB mark): Active screen-resolution wallpaper buffer (up to 1920x1080x4 = 8.3MB)
+// 0x01200000 (18MB mark): Temporary 1024x768 decoded source buffer (3.1MB)
+static unsigned int *g_wallpaper_buf = (unsigned int *)0x00C00000;
+static unsigned int *g_raw_1024      = (unsigned int *)0x01200000;
+
 static int g_current_wallpaper = 0;
 static int g_loaded_wallpaper = -1;
+static int g_loaded_w = 0;
+static int g_loaded_h = 0;
 
 typedef struct {
     const unsigned char *data;
@@ -27,10 +34,14 @@ static unsigned char pjpeg_need_bytes(unsigned char *pBuf, unsigned char buf_siz
 }
 
 static void wallpaper_decode_current(void) {
+    int screen_w = gfx_get_width();
+    int screen_h = gfx_get_height();
+
     if (g_current_wallpaper < 0 || g_current_wallpaper >= WALLPAPER_COUNT) {
         g_current_wallpaper = 0;
     }
-    if (g_loaded_wallpaper == g_current_wallpaper) {
+
+    if (g_loaded_wallpaper == g_current_wallpaper && g_loaded_w == screen_w && g_loaded_h == screen_h) {
         return;
     }
 
@@ -40,10 +51,13 @@ static void wallpaper_decode_current(void) {
     unsigned char status = pjpeg_decode_init(&info, pjpeg_need_bytes, &stream, 0);
     if (status != 0) {
         // Fallback: solid color
-        for (int i = 0; i < 1024 * 768; i++) {
+        int total = screen_w * screen_h;
+        for (int i = 0; i < total; i++) {
             g_wallpaper_buf[i] = RGB(24, 25, 38);
         }
         g_loaded_wallpaper = g_current_wallpaper;
+        g_loaded_w = screen_w;
+        g_loaded_h = screen_h;
         return;
     }
 
@@ -77,14 +91,14 @@ static void wallpaper_decode_current(void) {
                                     int dx = img_x * 2;
                                     int dy = img_y * 2;
                                     if (dx + 1 < 1024 && dy + 1 < 768) {
-                                        g_wallpaper_buf[dy * 1024 + dx] = col;
-                                        g_wallpaper_buf[dy * 1024 + dx + 1] = col;
-                                        g_wallpaper_buf[(dy + 1) * 1024 + dx] = col;
-                                        g_wallpaper_buf[(dy + 1) * 1024 + dx + 1] = col;
+                                        g_raw_1024[dy * 1024 + dx] = col;
+                                        g_raw_1024[dy * 1024 + dx + 1] = col;
+                                        g_raw_1024[(dy + 1) * 1024 + dx] = col;
+                                        g_raw_1024[(dy + 1) * 1024 + dx + 1] = col;
                                     }
                                 } else {
                                     if (img_x < 1024 && img_y < 768) {
-                                        g_wallpaper_buf[img_y * 1024 + img_x] = col;
+                                        g_raw_1024[img_y * 1024 + img_x] = col;
                                     }
                                 }
                             }
@@ -106,14 +120,14 @@ static void wallpaper_decode_current(void) {
                             int dx = img_x * 2;
                             int dy = img_y * 2;
                             if (dx + 1 < 1024 && dy + 1 < 768) {
-                                g_wallpaper_buf[dy * 1024 + dx] = col;
-                                g_wallpaper_buf[dy * 1024 + dx + 1] = col;
-                                g_wallpaper_buf[(dy + 1) * 1024 + dx] = col;
-                                g_wallpaper_buf[(dy + 1) * 1024 + dx + 1] = col;
+                                g_raw_1024[dy * 1024 + dx] = col;
+                                g_raw_1024[dy * 1024 + dx + 1] = col;
+                                g_raw_1024[(dy + 1) * 1024 + dx] = col;
+                                g_raw_1024[(dy + 1) * 1024 + dx + 1] = col;
                             }
                         } else {
                             if (img_x < 1024 && img_y < 768) {
-                                g_wallpaper_buf[img_y * 1024 + img_x] = col;
+                                g_raw_1024[img_y * 1024 + img_x] = col;
                             }
                         }
                     }
@@ -121,11 +135,46 @@ static void wallpaper_decode_current(void) {
             }
         }
     }
+
+    // Scale from g_raw_1024 (1024x768) to screen resolution (screen_w x screen_h)
+    if (screen_w == 1024 && screen_h == 768) {
+        int total = 1024 * 768;
+        unsigned int *dst = g_wallpaper_buf;
+        const unsigned int *src = g_raw_1024;
+        __asm__ volatile (
+            "cld\n"
+            "rep movsl\n"
+            : "+D"(dst), "+S"(src), "+c"(total)
+            :
+            : "memory"
+        );
+    } else {
+        for (int y = 0; y < screen_h; y++) {
+            int src_y = (y * 768) / screen_h;
+            unsigned int *dst_row = g_wallpaper_buf + (y * screen_w);
+            const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
+            for (int x = 0; x < screen_w; x++) {
+                int src_x = (x * 1024) / screen_w;
+                dst_row[x] = src_row[src_x];
+            }
+        }
+    }
+
     g_loaded_wallpaper = g_current_wallpaper;
+    g_loaded_w = screen_w;
+    g_loaded_h = screen_h;
 }
 
 void wallpaper_init(void) {
     g_loaded_wallpaper = -1;
+    g_loaded_w = 0;
+    g_loaded_h = 0;
+}
+
+void wallpaper_invalidate(void) {
+    g_loaded_wallpaper = -1;
+    g_loaded_w = 0;
+    g_loaded_h = 0;
 }
 
 int wallpaper_get_count(void) {
@@ -158,12 +207,15 @@ void wallpaper_set(int id) {
 }
 
 void wallpaper_draw_desktop(void) {
-    if (g_loaded_wallpaper != g_current_wallpaper) {
+    int screen_w = gfx_get_width();
+    int screen_h = gfx_get_height();
+
+    if (g_loaded_wallpaper != g_current_wallpaper || g_loaded_w != screen_w || g_loaded_h != screen_h) {
         wallpaper_decode_current();
     }
-    unsigned int *dst = (unsigned int *)0x200000;
+    unsigned int *dst = gfx_get_backbuffer();
     const unsigned int *src = g_wallpaper_buf;
-    int count = 1024 * 768;
+    int count = screen_w * screen_h;
     __asm__ volatile (
         "cld\n"
         "rep movsl\n"
@@ -174,12 +226,15 @@ void wallpaper_draw_desktop(void) {
 }
 
 void wallpaper_draw_tinted(void) {
-    if (g_loaded_wallpaper != g_current_wallpaper) {
+    int screen_w = gfx_get_width();
+    int screen_h = gfx_get_height();
+
+    if (g_loaded_wallpaper != g_current_wallpaper || g_loaded_w != screen_w || g_loaded_h != screen_h) {
         wallpaper_decode_current();
     }
-    unsigned int *dst = (unsigned int *)0x200000;
+    unsigned int *dst = gfx_get_backbuffer();
     const unsigned int *src = g_wallpaper_buf;
-    int count = 1024 * 768;
+    int count = screen_w * screen_h;
     for (int i = 0; i < count; i++) {
         unsigned int c = src[i];
         unsigned int r = ((c >> 16) & 0xFF) * 40 / 100;

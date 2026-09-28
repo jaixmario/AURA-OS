@@ -10,5 +10,6 @@ int  wallpaper_get_current(void);
 void wallpaper_set(int id);
 void wallpaper_draw_desktop(void);
 void wallpaper_draw_tinted(void);
+void wallpaper_invalidate(void);
 
 #endif // WALLPAPER_H

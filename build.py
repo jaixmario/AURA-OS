@@ -45,6 +45,7 @@ def main():
         os.path.join(KERNEL_DIR, "arch", "mouse.c"),
         os.path.join(KERNEL_DIR, "arch", "rtc.c"),
         os.path.join(KERNEL_DIR, "arch", "ata.c"),
+        os.path.join(KERNEL_DIR, "arch", "display.c"),
         os.path.join(KERNEL_DIR, "gfx", "font.c"),
         os.path.join(KERNEL_DIR, "gfx", "gfx.c"),
         os.path.join(KERNEL_DIR, "gfx", "picojpeg.c"),
@@ -91,6 +92,7 @@ def main():
         LLD,
         "-m", "elf_i386",
         "--oformat", "binary",
+        "-Map", os.path.join(BIN_DIR, "kernel.map"),
         "-T", linker_script,
         k_entry_o
     ] + c_objects + ["-o", kernel_bin]
@@ -148,7 +150,7 @@ Installed on: Primary MBR Hard Disk (FAT16 Partition)
     print(f"[*] Creating Bootable ISO for VMware / QEMU: {iso_path}...")
     try:
         from make_iso import make_bootable_iso
-        make_bootable_iso(boot_bin, kernel_bin, iso_path)
+        make_bootable_iso(boot_bin, kernel_bin, disk_img, iso_path)
     except Exception as e:
         print("[!] ISO creation warning:", e)
 

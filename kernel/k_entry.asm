@@ -16,6 +16,26 @@ _start:
     mov ss, ax
     mov esp, 0x1FFFF0
 
+    ; If El Torito CD-ROM boot, we were entered at 0x7E00.
+    ; Check current instruction pointer
+    call .get_ip
+.get_ip:
+    pop eax
+    cmp eax, 0x10000
+    jae .kernel_ready
+
+    ; Running at 0x7E00: relocate 512 KB backwards to 0x10000
+    mov esi, 0x7E00 + 524288 - 4
+    mov edi, 0x10000 + 524288 - 4
+    mov ecx, 131072
+    std
+    rep movsd
+    cld
+
+    ; Far jump to relocated kernel at 0x10000
+    jmp 0x08:0x10000 + (.kernel_ready - _start)
+
+.kernel_ready:
     push 0x7000 ; pointer to boot_info_t
     call kernel_main
 

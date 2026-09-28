@@ -47,6 +47,29 @@ You can boot AuraOS in VMware using either the **Bootable CD-ROM ISO** or the **
 2. RAM: `256 MB` -> Storage: Choose `auraos.iso` as Optical Disk or `auraos.img` as Hard Disk.
 3. Start the virtual machine.
 
+### 4. Flashing to USB with Rufus & Booting on Real Devices
+
+`auraos.iso` is built as an **ISOHybrid** image with a Master Boot Record (MBR) and partition table at Sector 0 alongside standard El Torito CD-ROM boot records. This enables writing the ISO directly to USB flash drives to boot bare-metal PCs!
+
+#### Writing with Rufus:
+1. Insert your USB flash drive (any size, 1 GB+ is plenty) and open **Rufus**.
+2. Under **Device**, select your USB flash drive.
+3. Under **Boot selection**, click **SELECT** and choose `auraos.iso`.
+4. Rufus will display the notification:
+   > **"ISOHybrid image detected: ... As a result, DD image writing mode will be enforced."**
+5. Click **OK**. *(This is expected and normal for hybrid ISOs: Rufus writes the raw sector image directly to the USB drive, preserving the MBR and boot sector bit-for-bit).*
+6. Click **START**. Rufus will write the image to the USB drive.
+
+#### Booting on Real PC Hardware:
+1. Insert the USB drive into your target PC or laptop.
+2. Power on the PC and press the **Boot Menu key** (typically `F12`, `F8`, `F11`, `F9`, or `Esc` depending on your motherboard/laptop brand: Dell/Lenovo: `F12`, Asus: `F8`/`F9`, HP: `F9`, Acer: `F12`).
+3. Select your USB drive under **Legacy Boot** / **CSM** (AuraOS uses x86 32-bit BIOS/VBE architecture; if your PC is UEFI-only, ensure **CSM (Compatibility Support Module)** or **Legacy Boot** is enabled in BIOS setup).
+4. The AuraOS bootloader will execute:
+   - **Automatic Hardware Detection**: The bootloader automatically queries your monitor over the VBE DDC bus, extracts its native resolution (e.g. 1920x1080 Full HD, 1600x900, 1366x768, 1280x800), and boots into it automatically with zero user intervention!
+   - You can also optionally press `1` to force 1920x1080 Full HD.
+5. You will land on the **Live Installation Desktop** (`* AURA OS Live Installation Media`).
+6. Double-click the **Install AuraOS** icon on the desktop to launch the permanent installation wizard and install AuraOS to your PC's internal hard drive!
+
 ---
 
 ## 🛠️ Building from Scratch
@@ -111,13 +134,64 @@ flowchart TD
   - Active window header accent highlighting.
 
 ### 4. Interactive Applications (`kernel/apps/`)
+- 💿 **Live OS Installer** (`app_installer.c`): Permanent hard disk installation wizard for real PC hardware and virtual machines. Formats the target drive, creates a bootable Master Boot Record (MBR) partition table, copies the AuraOS kernel binary and system files, configures user credentials, and equips the target hard disk with an independent boot sector to boot directly into user mode without live media.
 - 📁 **File Explorer**: Modern user-friendly storage manager featuring an interactive, editable location / breadcrumb bar (`C:\<path>`) with a `[ Go ]` button to navigate to any folder path anywhere on disk, dynamic physical hard drive capacity detection displaying true disk sizes up to **8.0 GB** (`ATA (8.0 GB)`), top action toolbar (`Open in Notes`, `+ New`, `Delete`, `Refresh`), file `[ Move ]` capability to relocate files to any folder path, interactive "Store New File on Disk" dialog modal asking where to store files with custom path support, sidebar category filters with live badge counts, drive usage progress bar, color-coded file badges (`[TXT]`, `[CFG]`, `[SYS]`, `[SH]`, `[LOG]`), live monospace code preview card, double-click to open, and keyboard navigation (W/S, Enter, D, N, P).
-- ⚙️ **Settings Control Panel**: Multi-tab control center with live desktop wallpaper theme switching, Date & Time adjustments (hours, minutes, days, months, years) with bidirectional CMOS hardware synchronization and saving, mouse sensitivity toggle, hardware VESA framebuffer readouts, and system statistics.
-- 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 6MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
+- ⚙️ **Settings Control Panel**: Multi-tab control center:
+  - **Personalize (Tab 0)**: Live photographic wallpaper switcher with smooth dynamic scaling.
+  - **Date & Time (Tab 1)**: Hardware CMOS Real-Time Clock adjustments with bidirectional CMOS sync.
+  - **Mouse & Speed (Tab 2)**: 3-tier cursor sensitivity curve (1.0x, 1.5x, 2.0x) and live coordinate tracker.
+  - **Display & Res (Tab 3)**: **Interactive Display Size Switcher** with live mode switching across 7 resolutions (1920x1080 Full HD down to 800x600 SVGA), aspect ratio badges (`[16:9]`, `[4:3]`, `[5:4]`), adapter identification, VRAM address mapping, one-click `[ Apply ]`, and persistent configuration to `SYSTEM.CFG`.
+  - **About System (Tab 4)**: Operating system specifications, kernel version, and live uptime telemetry.
+- 🎨 **Canvas Paint**: Advanced creative drawing studio featuring a dedicated 10MB extended memory buffer, 16-color palette (2 rows), 4 brush sizes (1px Pencil, 3px Brush, 6px Marker, Eraser), smooth Bresenham continuous stroke interpolation, Clear button, color preview, and real-time status bar.
 - 📝 **Notes Editor**: Multiline document editor with top action toolbar (`+ New`, `Open File`, `Save`, `Save As`), interactive "Save File to Disk" dialog modal allowing custom folder/path input anywhere on disk (`Folder / Path: ` input box alongside quick presets `Documents`, `Storage`, `System`), real-time hard disk device summary, active file indicator badge (`[ok]` / `* (Mod)`), interactive in-window Open File picker dialog, direct ATA hard disk sector persistence, gutter line numbering, and seamless inter-app opening from File Explorer and Terminal (`edit <file>`).
-- 💻 **Terminal**: Interactive shell with command prompt (`aura@C:\<cwd>> `). Supports `cd <path>`, `pwd`, `disk` (physical drive specs and sector readout), `mv <file> <folder>`, `files`, `edit <f>`, `ls`/`dir`, `cat`, `touch`, `rm`, `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `date`/`time`, `sync`, `theme`, `mem`, `ver`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
+- 💻 **Terminal**: Interactive shell with command prompt (`aura@C:\<cwd>> `). Supports `res` / `display` (live resolution switching and mode query), `cd <path>`, `pwd`, `disk` (physical drive specs and sector readout), `mv <file> <folder>`, `files`, `edit <f>`, `ls`/`dir`, `cat`, `touch`, `rm`, `help`, `settings`, `paint`, `notes`, `calc`, `sysinfo`, `date`/`time`, `sync`, `theme`, `mem`, `ver`, `uptime`, `clear`/`cls`, `echo`, and `reboot`.
 - 🧮 **Calculator**: Functional 16-button clickable desktop calculator supporting addition, subtraction, multiplication, and division.
 - ℹ️ **System Info**: Displays OS architecture, display specs, live memory allocation, uptime, and animated CPU activity bar.
+
+---
+
+## 🖥️ Display Resolutions & Automatic Screen Size Detection
+
+AuraOS features an **Automatic Monitor Display Size Detection engine** powered by real-mode **VBE DDC (Display Data Channel) & EDID (Extended Display Identification Data)** alongside a **Bochs/QEMU BGA (Bochs Graphics Adaptor)** hardware driver and **multi-resolution VBE linear framebuffer engine**:
+
+### ✦ Automatic Display Size Detection:
+- **Zero-Configuration Native Boot**: When booting on real PC hardware, laptops, or virtual machines, AuraOS queries the monitor over the I2C/DDC bus (`INT 10h, AX=4F15h, BL=01h`), extracts the monitor's 128-byte EDID block, parses the Detailed Timing Descriptor, and **automatically boots in the monitor's native resolution** (e.g. 1920×1080 Full HD on 1080p monitors, 1366×768 on widescreen laptops, 1280×800 on portable screens, 1600×900 on desktop displays)!
+- **Automatic Fallback**: If an older legacy monitor or virtual adapter does not report DDC/EDID, AuraOS safely defaults to universal 1024×768 TrueColor.
+
+| Mode ID | Resolution | Aspect Ratio | Category | Purpose |
+|:---:|:---:|:---:|:---:|:---|
+| **0** | **1920 × 1080** | **16:9** | **Full HD (1080p)** | Modern widescreen monitors, TVs, and high-DPI displays |
+| **1** | **1600 × 900** | 16:9 | HD+ | Mid-size desktop screens and 15" laptops |
+| **2** | **1366 × 768** | 16:9 | WXGA | Standard laptop and portable display native resolution |
+| **3** | **1280 × 1024** | 5:4 | SXGA | Traditional 17" and 19" LCD desktop monitors |
+| **4** | **1280 × 800** | 16:10 | WXGA | 16:10 widescreen laptops and virtual machines |
+| **5** | **1280 × 720** | 16:9 | HD (720p) | 720p widescreen format |
+| **6** | **1024 × 768** | 4:3 | XGA (Default) | Universal VESA VBE standard compatibility |
+| **7** | **800 × 600** | 4:3 | SVGA | Legacy fallback display mode |
+
+### How to Use & Switch Display Sizes:
+
+1. **Automatic Detection at Boot (Default)**:
+   - Just turn on your computer or launch the VM. AuraOS queries the monitor's EDID and automatically sets the native display size!
+   - Optional: If you wish to manually force 1080p without EDID, press **`1`** during boot.
+
+2. **Via Settings Control Panel**:
+   - Open **Settings** from the desktop icon or taskbar Start Menu.
+   - Switch to **Display & Res** (Tab 3).
+   - The top hero card displays your connected monitor model and detected native resolution (e.g. `Monitor: QEMU Monitor (1280x800 16:10)` or `Monitor: DELL U2415 (1920x1080 16:9)`).
+   - Click **`[ ✦ Auto-Detect Size ]`** to automatically identify and apply the native monitor resolution at any time.
+   - Or click **`[ Apply ]`** next to any specific resolution to switch manually.
+   - The desktop immediately adapts: the backbuffer reallocates, the photographic wallpaper scales dynamically, the mouse cursor boundaries re-calibrate, and all open windows are clamped into the new viewable desktop geometry!
+
+3. **Via Terminal Shell**:
+   - Launch **Terminal** and run:
+     ```bash
+     res auto          # Automatically detects connected monitor & applies native resolution
+     res               # Shows monitor name, native resolution, and all supported modes
+     res 1920 1080     # Instantly switches to 1080p Full HD
+     res 0             # Switches using Mode ID 0 (1920x1080)
+     ```
+
 
 ---
 
@@ -135,23 +209,26 @@ AuraOS/
 │   │   ├── pit.h / pit.c   # 8254 Timer & Uptime counter
 │   │   ├── rtc.h / rtc.c   # CMOS Real-Time Clock & Date driver
 │   │   ├── ata.h / ata.c   # ATA PIO Hard Disk driver & Sector I/O
+│   │   ├── display.h / display.c # Multi-resolution BGA & VBE display manager
 │   │   ├── kbd.h / kbd.c   # PS/2 Keyboard scancode decoder
 │   │   └── mouse.h / mouse.c # PS/2 Mouse packet decoder & coordinates
 │   ├── fs/
 │   │   └── vfs.h / vfs.c   # Virtual File System & storage manager
 │   ├── gfx/
 │   │   ├── font.h / font.c # 8x16 crisp bitmap font
+│   │   ├── wallpaper.h / wallpaper.c # Dynamic scaling wallpaper engine
 │   │   └── gfx.h / gfx.c   # Double-buffered graphics engine
 │   ├── wm/
 │   │   └── wm.h / wm.c     # Floating Window Manager & controls
 │   ├── apps/
 │   │   ├── apps.h
+│   │   ├── app_installer.c # Hard disk installation wizard
 │   │   ├── app_files.c     # File Explorer GUI application
 │   │   ├── app_term.c      # Interactive Terminal application
 │   │   ├── app_calc.c      # Calculator application
 │   │   ├── app_paint.c     # Canvas Paint application
 │   │   ├── app_notes.c     # Multiline Notes text editor
-│   │   ├── app_settings.c  # Settings Control Panel
+│   │   ├── app_settings.c  # Settings Control Panel & Display Switcher
 │   │   └── app_sysinfo.c   # System Information dashboard
 │   ├── libc/
 │   │   └── string.h / string.c # Freestanding string & formatting library

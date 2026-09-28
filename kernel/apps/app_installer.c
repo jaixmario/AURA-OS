@@ -359,10 +359,25 @@ static void installer_perform_disk_write(void) {
         return;
     }
 
-    // 1. Write Sector 0 (MBR 512 bytes from 0x7C00)
+    // 1. Write Sector 0 (MBR 512 bytes)
     strncpy(install_status_msg, "Writing MBR bootloader to Sector 0...", sizeof(install_status_msg));
     unsigned char mbr_buf[512];
     memcpy(mbr_buf, (const void *)0x7C00, 512);
+
+    // Ensure DAP starting LBA is set to 1 for installed hard disk
+    for (int i = 0; i < 400; i++) {
+        if (mbr_buf[i] == 0x10 && mbr_buf[i+1] == 0x00 && mbr_buf[i+2] == 0x40 && mbr_buf[i+3] == 0x00) {
+            unsigned int lba_low = 1;
+            unsigned int lba_high = 0;
+            memcpy(&mbr_buf[i + 8], &lba_low, 4);
+            memcpy(&mbr_buf[i + 12], &lba_high, 4);
+            break;
+        }
+    }
+    // Ensure signature 0x55AA is present
+    mbr_buf[510] = 0x55;
+    mbr_buf[511] = 0xAA;
+
     int res = ata_write_sector(0, mbr_buf);
     if (res != 0) {
         strncpy(install_status_msg, "Error: Failed to write Sector 0 MBR!", sizeof(install_status_msg));

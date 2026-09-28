@@ -5,6 +5,7 @@
 #include "../arch/rtc.h"
 #include "../fs/vfs.h"
 #include "../arch/io.h"
+#include "../arch/display.h"
 #include "../libc/string.h"
 
 #define TERM_MAX_LINES 16
@@ -63,6 +64,7 @@ static void term_execute_command(void) {
         term_add_line("  lock     - lock desktop and show login screen");
         term_add_line("  wallpapers- list all 8 desktop wallpapers");
         term_add_line("  theme <n>- set desktop wallpaper (0-7)");
+        term_add_line("  res [w h]- switch display size (e.g. res 1920 1080)");
         if (!sys_is_installed()) {
             term_add_line("  install  - launch AuraOS installer");
         }
@@ -193,12 +195,88 @@ static void term_execute_command(void) {
         app_sysinfo_launch();
         term_add_line("Launched System Info.");
     } else if (strcmp(input_buf, "mem") == 0) {
-        term_add_line("Memory Architecture Layout:");
+        term_add_line("Memory Architecture Layout (Extended RAM):");
         term_add_line("  Kernel Code : 0x00010000 (Flat Model)");
         term_add_line("  Kernel Stack: 0x001FFFF0 (1MB Ring 0 Stack)");
-        term_add_line("  VRAM Buffer : 0x00200000 (3MB Double Buffer)");
-        term_add_line("  Wallpaper   : 0x00500000 (3MB Photographic Buffer)");
-        term_add_line("  Paint Canvas: 0x00800000 (Extended RAM)");
+        term_add_line("  VRAM Buffer : 0x00200000 (10MB Double Buffer)");
+        term_add_line("  Wallpaper   : 0x00C00000 (10MB Dynamic Buffer)");
+        term_add_line("  Paint Canvas: 0x01600000 (10MB Extended Canvas)");
+        term_add_line("  VFS Cache   : 0x02000000 (8MB Storage RAM)");
+        term_add_line("  Notes Buffer: 0x02800000 (8MB Document RAM)");
+    } else if (strcmp(input_buf, "res") == 0 || strcmp(input_buf, "display") == 0) {
+        term_add_line("AuraOS Display Resolutions & Monitor Info:");
+        edid_info_t edid;
+        display_get_edid_info(&edid);
+        char mon_line[64];
+        snprintf(mon_line, sizeof(mon_line), "  Monitor: %s (%dx%d %s)",
+                 edid.monitor_name, edid.native_w, edid.native_h, edid.aspect);
+        term_add_line(mon_line);
+        term_add_line("Supported Modes:");
+        int cur_idx = display_get_current_mode_index();
+        for (int i = 0; i < display_get_mode_count(); i++) {
+            const display_mode_t *m = display_get_mode(i);
+            char line[64];
+            snprintf(line, sizeof(line), "  %s[%d] %-11s (%s) - %s",
+                     (i == cur_idx) ? "* " : "  ",
+                     i, m->label, m->aspect, m->desc);
+            term_add_line(line);
+        }
+        term_add_line("Usage: res auto         (Auto-detect native monitor size)");
+        term_add_line("   or: res <w> <h>      (e.g. res 1920 1080)");
+        term_add_line("   or: res <id>         (e.g. res 0)");
+    } else if (strncmp(input_buf, "res ", 4) == 0 || strncmp(input_buf, "display ", 8) == 0) {
+        const char *arg = input_buf;
+        while (*arg && *arg != ' ') arg++;
+        while (*arg == ' ') arg++;
+
+        if (strcmp(arg, "auto") == 0) {
+            edid_info_t edid;
+            display_get_edid_info(&edid);
+            int res = display_auto_detect();
+            char msg[64];
+            if (res == 1) {
+                snprintf(msg, sizeof(msg), "[+] Auto-detected & applied %s (%dx%d) live!",
+                         edid.monitor_name, edid.native_w, edid.native_h);
+            } else {
+                snprintf(msg, sizeof(msg), "[+] Auto-detected %s (%dx%d) saved to config!",
+                         edid.monitor_name, edid.native_w, edid.native_h);
+            }
+            term_add_line(msg);
+        } else if (arg[0] >= '0' && arg[0] <= '7' && (arg[1] == '\0' || arg[1] == ' ')) {
+            int idx = arg[0] - '0';
+            const display_mode_t *m = display_get_mode(idx);
+            int res = display_set_mode_by_index(idx);
+            char msg[64];
+            if (res == 1) {
+                snprintf(msg, sizeof(msg), "[+] Display switched live to %s!", m->label);
+            } else {
+                snprintf(msg, sizeof(msg), "[+] %s saved to boot configuration!", m->label);
+            }
+            term_add_line(msg);
+        } else {
+            int w = 0, h = 0;
+            while (*arg >= '0' && *arg <= '9') {
+                w = w * 10 + (*arg - '0');
+                arg++;
+            }
+            while (*arg == ' ' || *arg == 'x' || *arg == 'X') arg++;
+            while (*arg >= '0' && *arg <= '9') {
+                h = h * 10 + (*arg - '0');
+                arg++;
+            }
+            if (w >= 640 && h >= 480) {
+                int res = display_set_resolution(w, h);
+                char msg[64];
+                if (res == 1) {
+                    snprintf(msg, sizeof(msg), "[+] Display switched live to %dx%d!", w, h);
+                } else {
+                    snprintf(msg, sizeof(msg), "[+] %dx%d saved to boot configuration!", w, h);
+                }
+                term_add_line(msg);
+            } else {
+                term_add_line("Usage: res <width> <height> (e.g. res 1920 1080)");
+            }
+        }
     } else if (strcmp(input_buf, "ver") == 0 || strcmp(input_buf, "version") == 0) {
         term_add_line("AuraOS Version 1.2.0 [i686 Protected Mode]");
     } else if (strcmp(input_buf, "date") == 0 || strcmp(input_buf, "time") == 0) {
@@ -212,9 +290,11 @@ static void term_execute_command(void) {
         rtc_sync_from_cmos();
         term_add_line("Synchronized clock with CMOS hardware RTC.");
     } else if (strcmp(input_buf, "info") == 0) {
-        term_add_line("AuraOS v1.1 [i686 Protected Mode]");
-        term_add_line("Video: 1024x768 Dynamic VBE TrueColor");
-        term_add_line("Drivers: PS/2 Mouse & Keyboard, PIT 100Hz");
+        char imsg[64];
+        snprintf(imsg, sizeof(imsg), "Video: %dx%d Dynamic TrueColor (BGA / VBE 2.0+)", gfx_get_width(), gfx_get_height());
+        term_add_line("AuraOS v1.2 [i686 Protected Mode]");
+        term_add_line(imsg);
+        term_add_line("Drivers: PS/2 Mouse & Keyboard, PIT 100Hz, CMOS RTC");
     } else if (strcmp(input_buf, "clear") == 0 || strcmp(input_buf, "cls") == 0) {
         term_line_count = 0;
     } else if (strcmp(input_buf, "uptime") == 0) {
