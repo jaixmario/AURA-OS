@@ -3,7 +3,6 @@ import os
 import shutil
 
 def find_mkisofs():
-    # 1. Check known install locations
     known_paths = [
         r"C:\Program Files (x86)\cdrtfe\tools\cdrtools\mkisofs.exe",
         r"C:\Program Files\cdrtfe\tools\cdrtools\mkisofs.exe",
@@ -12,45 +11,40 @@ def find_mkisofs():
         if os.path.exists(p):
             return p
 
-    # 2. Check PATH
     p = shutil.which("mkisofs")
     if p:
         return p
 
-    # 3. Check cygwin / chocolatey
     p = shutil.which("xorrisofs")
     if p:
         return p
 
     return known_paths[0]
 
-def make_bootable_iso(boot_bin, kernel_bin, disk_img, iso_path):
+def make_bootable_iso(boot_bin, kernel_bin, iso_path):
     project_dir = os.path.dirname(os.path.abspath(iso_path))
     iso_root = os.path.join(project_dir, "iso_root")
     if os.path.exists(iso_root):
         shutil.rmtree(iso_root)
     os.makedirs(iso_root, exist_ok=True)
 
-    # 1. Read bootloader, kernel, and hard disk image
+    # 1. Read bootloader and kernel
     with open(boot_bin, 'rb') as f:
         boot_data = f.read() # 512 bytes
     with open(kernel_bin, 'rb') as f:
         kernel_data = f.read() # ~493 KB
-    with open(disk_img, 'rb') as f:
-        disk_data = bytearray(f.read()) # 10 MB MBR disk image
 
-    # 2. Patch is_live_default = 1 in disk.img for Live Media boot
-    a0_idx = disk_data[:446].find(b'\xa0')
-    if a0_idx != -1 and a0_idx < 50:
-        var_addr = int.from_bytes(disk_data[a0_idx+1:a0_idx+3], 'little')
-        var_offset = var_addr - 0x7C00
-        if 0 <= var_offset < 446:
-            disk_data[var_offset] = 1 # is_live_default = 1
-            print(f"    - Patched disk.img is_live_boot: 1 (offset {var_offset})")
+    # 2. Create the boot payload: boot.bin (512 bytes) + kernel.bin
+    # The El Torito BIOS loads this 512 KB payload to 0x7C00.
+    payload = bytearray(boot_data)
+    payload.extend(kernel_data)
+    target_payload_len = 524288 # 1024 sectors (512 KB)
+    if len(payload) < target_payload_len:
+        payload.extend(b'\x00' * (target_payload_len - len(payload)))
 
-    # Save disk.img as El Torito Hard Disk boot image
-    with open(os.path.join(iso_root, "disk.img"), "wb") as f:
-        f.write(disk_data)
+    payload_file = os.path.join(iso_root, "boot.bin")
+    with open(payload_file, "wb") as f:
+        f.write(payload)
 
     # 3. Add user-visible files to CD root
     with open(os.path.join(iso_root, "KERNEL.BIN"), "wb") as f:
@@ -96,9 +90,7 @@ HEAP_SIZE_MB=16
     with open(os.path.join(iso_root, "SYSTEM.CFG"), "w", encoding="ascii") as f:
         f.write(cfg_content)
 
-    # 4. Run mkisofs with El Torito Hard Disk Emulation (-hard-disk-boot)
-    # This guarantees 100% compatibility with VMware Workstation, VirtualBox,
-    # and QEMU without 2048-byte sector truncation bugs.
+    # 4. Run mkisofs with El Torito No-Emulation (-no-emul-boot)
     mkisofs = find_mkisofs()
     cygwin_dir = r"C:\Program Files (x86)\cdrtfe\tools\cygwin"
     env = os.environ.copy()
@@ -111,8 +103,9 @@ HEAP_SIZE_MB=16
         "-p", "AuraOS",
         "-A", "AuraOS",
         "-J", "-R",              # Joliet & Rock Ridge extensions
-        "-b", "disk.img",        # Hard disk boot image
-        "-hard-disk-boot",       # El Torito Hard Disk Emulation (Drive 0x80)
+        "-b", "boot.bin",        # Boot image
+        "-no-emul-boot",         # El Torito No Emulation
+        "-boot-load-size", "1024",# Load 1024 sectors (512 KB)
         "-o", os.path.basename(iso_path),
         "iso_root"
     ]
@@ -147,8 +140,8 @@ HEAP_SIZE_MB=16
         boot_iso_lba = int.from_bytes(def_entry[8:12], "little")
 
         # 512-byte HDD sector numbers:
-        # disk.img starts at boot_iso_lba * 4
-        # Inside disk.img, kernel starts at offset +1
+        # boot.bin is at boot_iso_lba * 4
+        # kernel.bin starts at boot_iso_lba * 4 + 1
         boot_hdd_lba = boot_iso_lba * 4
         kernel_hdd_lba = boot_hdd_lba + 1
 
@@ -176,23 +169,23 @@ HEAP_SIZE_MB=16
                 mbr[var_offset] = 1
                 print(f"    - Patched is_live_boot : 1 (offset {var_offset})")
 
-        # Partition 1: FAT16 partition located at boot_hdd_lba + 2048
-        part1_lba = boot_hdd_lba + 2048
-        part1_sectors = 18432
+        # Create Active MBR Partition 1 covering the entire ISO image
         part1 = bytearray(16)
-        part1[0] = 0x80 # Active / Bootable
-        part1[1] = 0x01
-        part1[2] = 0x01
-        part1[3] = 0x00
-        part1[4] = 0x06 # FAT16
-        part1[5] = 0x0F
-        part1[6] = 0x20
-        part1[7] = 0x27
-        part1[8:12] = part1_lba.to_bytes(4, "little")
-        part1[12:16] = part1_sectors.to_bytes(4, "little")
+        part1[0] = 0x80 # Bootable / Active
+        part1[1] = 0x00 # Head
+        part1[2] = 0x01 # Sector 1, Cylinder 0
+        part1[3] = 0x00 # Cylinder 0
+        part1[4] = 0x17 # Partition Type: Hidden ISO/HPFS/NTFS (Standard ISOHybrid type)
+        part1[5] = 0xFE # End Head
+        part1[6] = 0xFF # End Sector
+        part1[7] = 0xFF # End Cylinder
+        part1[8:12] = (0).to_bytes(4, "little") # Starting LBA = 0
+        part1[12:16] = total_sectors.to_bytes(4, "little") # Total sectors
 
         mbr[446:462] = part1
-        mbr[462:510] = b"\x00" * 48
+        mbr[462:478] = b"\x00" * 16 # Partition 2
+        mbr[478:494] = b"\x00" * 16 # Partition 3
+        mbr[494:510] = b"\x00" * 16 # Partition 4
         mbr[510:512] = b"\x55\xaa"  # MBR Boot Signature
 
         # Write Hybrid MBR directly to Sector 0 of the ISO
@@ -200,12 +193,11 @@ HEAP_SIZE_MB=16
         f.write(mbr)
         f.flush()
 
-    print(f"[+] Successfully built ISOHybrid for Rufus & VMware: {iso_path} ({os.path.getsize(iso_path)} bytes)")
+    print(f"[+] Successfully built ISOHybrid for Rufus & Real Devices: {iso_path} ({os.path.getsize(iso_path)} bytes)")
 
 if __name__ == '__main__':
     project_dir = os.path.dirname(os.path.abspath(__file__))
     boot_bin = os.path.join(project_dir, "bin", "boot.bin")
     kernel_bin = os.path.join(project_dir, "bin", "kernel.bin")
-    disk_img = os.path.join(project_dir, "auraos.img")
     iso_path = os.path.join(project_dir, "auraos.iso")
-    make_bootable_iso(boot_bin, kernel_bin, disk_img, iso_path)
+    make_bootable_iso(boot_bin, kernel_bin, iso_path)

@@ -150,7 +150,7 @@ Installed on: Primary MBR Hard Disk (FAT16 Partition)
     print(f"[*] Creating Bootable ISO for VMware / QEMU: {iso_path}...")
     try:
         from make_iso import make_bootable_iso
-        make_bootable_iso(boot_bin, kernel_bin, disk_img, iso_path)
+        make_bootable_iso(boot_bin, kernel_bin, iso_path)
     except Exception as e:
         print("[!] ISO creation warning:", e)
 
