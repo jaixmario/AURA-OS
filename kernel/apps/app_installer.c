@@ -12,7 +12,7 @@
 static window_t *installer_win = 0;
 static int current_step = 0; // 0=Welcome, 1=User Identity, 2=Disk Target, 3=Installing, 4=Complete
 
-// User Identity Input Fields ("ask name etc")
+// User Identity Input Fields
 static char in_fullname[32] = "Aura User";
 static char in_username[20] = "aura";
 static char in_hostname[24] = "aura-pc";
@@ -21,7 +21,13 @@ static char in_password[24] = "aura";
 static int focused_field = 0; // 0=Fullname, 1=Username, 2=Hostname, 3=Password
 static int install_progress = 0; // 0..100
 static int install_stage = 0;
-static char install_status_msg[64] = "Preparing disk...";
+static int install_chunk = 0;
+static int install_error = 0; // 0=None, 1=Error occurred
+static char install_status_msg[80] = "Preparing target disk...";
+static char install_err_msg[80] = "";
+
+#define KERNEL_TOTAL_SECTORS 1024
+#define KERNEL_CHUNK_SECTORS 128
 
 int app_installer_is_open(void) {
     return (installer_win && installer_win->is_open);
@@ -89,7 +95,7 @@ static void installer_draw_step_welcome(int cx, int cy, int cw) {
 
     // Hardware & Environment Info Card
     int card_y = cy + 50;
-    int card_h = 170;
+    int card_h = 175;
     gfx_fillrect(cx, card_y, cw, card_h, RGB(22, 24, 36));
     gfx_drawrect(cx, card_y, cw, card_h, COLOR_BORDER);
 
@@ -99,15 +105,20 @@ static void installer_draw_step_welcome(int cx, int cy, int cw) {
     ata_get_capacity_string(cap_str, sizeof(cap_str));
     int disk_ok = ata_is_available();
 
-    char line1[64], line2[64], line3[64], line4[64], line5[64];
-    snprintf(line1, sizeof(line1), "- Boot Mode     : Live CD / Bootable ISO Media");
+    char line1[64], line2[64], line3[64], line4[80], line5[80];
+    snprintf(line1, sizeof(line1), "- Boot Mode     : Live CD / USB Bootable Media");
     snprintf(line2, sizeof(line2), "- Architecture  : i686 32-bit Protected Mode");
-    snprintf(line3, sizeof(line3), "- Video Engine  : VESA VBE 1024x768 TrueColor");
-    snprintf(line4, sizeof(line4), "- Target Storage: Primary Master ATA (0x1F0)");
+    snprintf(line3, sizeof(line3), "- Video Engine  : VESA VBE Multi-Resolution TrueColor");
+    snprintf(line4, sizeof(line4), "- Target Storage: %s", ata_get_location_string());
     if (disk_ok) {
-        snprintf(line5, sizeof(line5), "- Detected Disk : %s (%s)", ata_get_model(), cap_str);
+        int d_count = ata_get_drive_count();
+        if (d_count > 1) {
+            snprintf(line5, sizeof(line5), "- Detected Disk : %s (%s) [%d drives available]", ata_get_model(), cap_str, d_count);
+        } else {
+            snprintf(line5, sizeof(line5), "- Detected Disk : %s (%s)", ata_get_model(), cap_str);
+        }
     } else {
-        snprintf(line5, sizeof(line5), "- Detected Disk : [!] No ATA Hard Disk detected");
+        snprintf(line5, sizeof(line5), "- Detected Disk : [!] No ATA/IDE Hard Disk detected");
     }
 
     gfx_draw_string_clipped(cx + 16, card_y + 36, line1, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
@@ -117,13 +128,13 @@ static void installer_draw_step_welcome(int cx, int cy, int cw) {
     gfx_draw_string_clipped(cx + 16, card_y + 132, line5, disk_ok ? COLOR_GREEN : COLOR_RED, COLOR_TRANSPARENT, cw - 32);
 
     if (!disk_ok) {
-        gfx_draw_string(cx, card_y + card_h + 12, "[!] Please attach an IDE/ATA hard disk to install AuraOS.", COLOR_RED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, card_y + card_h + 12, "[!] Please attach an IDE virtual disk or enable IDE mode in BIOS.", COLOR_RED, COLOR_TRANSPARENT);
     } else {
         gfx_draw_string(cx, card_y + card_h + 12, "Click 'Next' to set up your username, computer name, and password.", COLOR_TEXT, COLOR_TRANSPARENT);
     }
 
     // Bottom Navigation Buttons
-    int btn_y = card_y + card_h + 46;
+    int btn_y = card_y + card_h + 44;
 
     // Button: [ Quit / Live Desktop ]
     gfx_fillrect(cx, btn_y, 140, 32, RGB(36, 40, 58));
@@ -174,9 +185,7 @@ static void installer_draw_step_user(int cx, int cy, int cw) {
         gfx_fillrect(cx, by, box_w, box_h, is_foc ? RGB(16, 18, 28) : RGB(24, 26, 38));
         gfx_drawrect(cx, by, box_w, box_h, is_foc ? COLOR_ACCENT : COLOR_BORDER);
 
-        // Value text
         if (i == 3) {
-            // Password display (masked dots or characters)
             int plen = strlen(in_password);
             char mask[32];
             for (int p = 0; p < plen && p < 30; p++) mask[p] = '*';
@@ -222,28 +231,36 @@ static void installer_draw_step_disk(int cx, int cy, int cw) {
     ata_get_capacity_string(cap_str, sizeof(cap_str));
 
     int card_y = cy + 44;
-    int card_h = 130;
+    int card_h = 135;
     gfx_fillrect(cx, card_y, cw, card_h, RGB(22, 24, 36));
     gfx_drawrect(cx, card_y, cw, card_h, COLOR_ACCENT);
 
     if (!ata_is_available()) {
         gfx_draw_string(cx + 14, card_y + 10, "Target Hard Disk: [!] NO ATA/IDE DISK FOUND", COLOR_RED, COLOR_TRANSPARENT);
         gfx_draw_string(cx + 14, card_y + 32, "VMware: In VM Settings, ensure Virtual Disk is set to IDE.", COLOR_YELLOW, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 54, "SCSI / SATA / NVMe controllers are not supported.", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 76, "Please add an IDE Hard Disk in VM Settings and reboot.", COLOR_TEXT, COLOR_TRANSPARENT);
-        gfx_draw_string(cx + 14, card_y + 98, "Target: Primary Master IDE (0:0)", COLOR_ACCENT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 54, "VirtualBox / PC: Set SATA Controller Mode to IDE / Legacy.", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 76, "Please attach an IDE hard disk and restart setup.", COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 14, card_y + 98, "Target: All IDE Ports Probed (0x1F0 / 0x170)", COLOR_ACCENT, COLOR_TRANSPARENT);
     } else {
-        char l1[64], l2[64], l3[64], l4[64];
-        snprintf(l1, sizeof(l1), "- Model      : %s", ata_get_model());
-        snprintf(l2, sizeof(l2), "- Total Size : %s (%u sectors)", cap_str, ata_get_total_sectors());
-        snprintf(l3, sizeof(l3), "- MBR Boot   : Sector 0 (Active FAT16 Partition 1)");
-        snprintf(l4, sizeof(l4), "- VFS Storage: LBA 512 (Superblock) & Clusters");
+        char l1[80], l2[80], l3[80], l4[80], l5[80];
+        snprintf(l1, sizeof(l1), "- Model       : %s", ata_get_model());
+        snprintf(l2, sizeof(l2), "- Capacity    : %s (%u sectors)", cap_str, ata_get_total_sectors());
+        snprintf(l3, sizeof(l3), "- Bus Location: %s", ata_get_location_string());
+        snprintf(l4, sizeof(l4), "- MBR Boot    : Sector 0 (Active FAT16 System Partition)");
+        snprintf(l5, sizeof(l5), "- VFS Storage : LBA 1000 (Superblock) & Clusters");
 
-        gfx_draw_string_clipped(cx + 14, card_y + 10, "Target Hard Disk:", COLOR_WHITE, COLOR_TRANSPARENT, cw - 28);
-        gfx_draw_string_clipped(cx + 14, card_y + 32, l1, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
-        gfx_draw_string_clipped(cx + 14, card_y + 54, l2, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
-        gfx_draw_string_clipped(cx + 14, card_y + 76, l3, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
-        gfx_draw_string_clipped(cx + 14, card_y + 98, l4, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 10, l1, COLOR_WHITE, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 32, l2, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 54, l3, COLOR_ACCENT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 76, l4, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+        gfx_draw_string_clipped(cx + 14, card_y + 98, l5, COLOR_TEXT, COLOR_TRANSPARENT, cw - 28);
+
+        // If multiple drives found, provide toggle button
+        if (ata_get_drive_count() > 1) {
+            gfx_fillrect(cx + cw - 160, card_y + 10, 146, 26, RGB(38, 42, 60));
+            gfx_drawrect(cx + cw - 160, card_y + 10, 146, 26, COLOR_ACCENT);
+            gfx_draw_string(cx + cw - 150, card_y + 15, "Switch Drive >", COLOR_WHITE, COLOR_TRANSPARENT);
+        }
     }
 
     // Selected Installation Mode Radio Box
@@ -255,9 +272,9 @@ static void installer_draw_step_disk(int cx, int cy, int cw) {
     gfx_fill_circle(cx + 18, radio_y + 22, 2, RGB(17, 17, 27));
 
     gfx_draw_string(cx + 34, radio_y + 8, "Erase disk and install clean AuraOS", COLOR_WHITE, COLOR_TRANSPARENT);
-    gfx_draw_string(cx + 34, radio_y + 24, "Format MBR, install 32-bit kernel, and configure files.", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_draw_string(cx + 34, radio_y + 24, "Format MBR, write 512KB kernel, and configure persistent files.", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
-    gfx_draw_string(cx, radio_y + 52, "[!] All data on this disk will be initialized with AuraOS.", COLOR_RED, COLOR_TRANSPARENT);
+    gfx_draw_string(cx, radio_y + 52, "[!] Target disk will be formatted and installed with AuraOS.", COLOR_RED, COLOR_TRANSPARENT);
 
     // Navigation buttons
     int btn_y = radio_y + 76;
@@ -275,6 +292,34 @@ static void installer_draw_step_disk(int cx, int cy, int cw) {
 }
 
 static void installer_draw_step_installing(int cx, int cy, int cw) {
+    if (install_error) {
+        gfx_draw_string(cx, cy, "Installation Failed! [!]", COLOR_RED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx, cy + 18, "An error occurred during hard disk operations:", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+        int err_y = cy + 50;
+        int err_h = 130;
+        gfx_fillrect(cx, err_y, cw, err_h, RGB(38, 20, 24));
+        gfx_drawrect(cx, err_y, cw, err_h, COLOR_RED);
+
+        gfx_draw_string(cx + 16, err_y + 14, "Error Details:", COLOR_WHITE, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 16, err_y + 36, install_err_msg, COLOR_RED, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 16, err_y + 60, "- Ensure your virtual disk controller is configured as IDE.", COLOR_TEXT, COLOR_TRANSPARENT);
+        gfx_draw_string(cx + 16, err_y + 80, "- Check that the disk image is writable.", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        int btn_y = err_y + err_h + 30;
+
+        // [ < Back to Selection ]
+        gfx_fillrect(cx, btn_y, 180, 32, RGB(36, 40, 58));
+        gfx_drawrect(cx, btn_y, 180, 32, COLOR_BORDER);
+        gfx_draw_string(cx + 16, btn_y + 8, "< Disk Selection", COLOR_TEXT, COLOR_TRANSPARENT);
+
+        // [ Retry Installation ]
+        gfx_fillrect(cx + cw - 150, btn_y, 150, 32, RGB(218, 56, 70));
+        gfx_drawrect(cx + cw - 150, btn_y, 150, 32, COLOR_WHITE);
+        gfx_draw_string(cx + cw - 130, btn_y + 8, "Retry Setup", COLOR_WHITE, COLOR_TRANSPARENT);
+        return;
+    }
+
     gfx_draw_string(cx, cy, "Installing AuraOS 1.0...", COLOR_WHITE, COLOR_TRANSPARENT);
     gfx_draw_string(cx, cy + 18, "Writing system binaries and user environment to hard disk.", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
 
@@ -304,9 +349,9 @@ static void installer_draw_step_installing(int cx, int cy, int cw) {
 
     // Step bullets
     int bul_y = log_y + 76;
-    gfx_draw_string(cx, bul_y + 0,  (install_stage >= 1) ? "[v] MBR Bootloader written" : "[-] Writing MBR Bootloader...",
+    gfx_draw_string(cx, bul_y + 0,  (install_stage >= 1) ? "[v] MBR Bootloader written (LBA 0)" : "[-] Writing MBR Bootloader...",
                     (install_stage >= 1) ? COLOR_GREEN : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-    gfx_draw_string(cx, bul_y + 20, (install_stage >= 2) ? "[v] Protected Mode Kernel installed" : "[-] Copying Kernel Image...",
+    gfx_draw_string(cx, bul_y + 20, (install_stage >= 2) ? "[v] Protected Mode Kernel installed (512 KB)" : "[-] Copying Kernel Image...",
                     (install_stage >= 2) ? COLOR_GREEN : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     gfx_draw_string(cx, bul_y + 40, (install_stage >= 3) ? "[v] AuraOS Superblock & VFS ready" : "[-] Initializing File System...",
                     (install_stage >= 3) ? COLOR_GREEN : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
@@ -326,12 +371,12 @@ static void installer_draw_step_complete(int cx, int cy, int cw) {
 
     gfx_draw_string(cx + 16, card_y + 12, "Installation Details:", COLOR_WHITE, COLOR_TRANSPARENT);
 
-    char l1[64], l2[64], l3[64], l4[64], l5[64];
+    char l1[64], l2[64], l3[80], l4[64], l5[64];
     snprintf(l1, sizeof(l1), "- User Name     : %s (%s)", in_fullname, in_username);
     snprintf(l2, sizeof(l2), "- Computer Name : %s", in_hostname);
-    snprintf(l3, sizeof(l3), "- Boot Target   : Primary ATA Hard Disk (MBR)");
+    snprintf(l3, sizeof(l3), "- Boot Target   : %s", ata_get_location_string());
     snprintf(l4, sizeof(l4), "- Storage State : Installed & Persistent (VFS)");
-    snprintf(l5, sizeof(l5), "- Next Step     : Eject ISO media and boot disk");
+    snprintf(l5, sizeof(l5), "- Next Step     : Eject ISO/USB media and boot from disk");
 
     gfx_draw_string_clipped(cx + 16, card_y + 36, l1, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
     gfx_draw_string_clipped(cx + 16, card_y + 60, l2, COLOR_WHITE, COLOR_TRANSPARENT, cw - 32);
@@ -353,106 +398,144 @@ static void installer_draw_step_complete(int cx, int cy, int cw) {
     gfx_draw_string(cx + cw - 124, btn_y + 8, "Reboot Now", COLOR_WHITE, COLOR_TRANSPARENT);
 }
 
-static void installer_perform_disk_write(void) {
+// Staged non-blocking installer step engine: advances one sub-task per render frame
+static void installer_process_step(void) {
+    if (install_error) return;
+
     if (!ata_is_available()) {
-        strncpy(install_status_msg, "Error: No primary ATA/IDE hard disk found!", sizeof(install_status_msg));
+        install_error = 1;
+        strncpy(install_err_msg, "No ATA/IDE hard disk found on system!", sizeof(install_err_msg));
         return;
     }
 
-    // 1. Write Sector 0 (MBR 512 bytes)
-    strncpy(install_status_msg, "Writing MBR bootloader to Sector 0...", sizeof(install_status_msg));
-    unsigned char mbr_buf[512];
-    memcpy(mbr_buf, (const void *)0x7C00, 512);
+    if (install_stage == 0) {
+        // Stage 0: Initial verification
+        install_stage = 1;
+        install_progress = 15;
+        strncpy(install_status_msg, "Writing MBR bootloader to Sector 0...", sizeof(install_status_msg));
+        return;
+    }
 
-    // Ensure DAP starting LBA is set to 1 for installed hard disk
-    for (int i = 0; i < 400; i++) {
-        if (mbr_buf[i] == 0x10 && mbr_buf[i+1] == 0x00 && mbr_buf[i+2] == 0x40 && mbr_buf[i+3] == 0x00) {
-            unsigned int lba_low = 1;
-            unsigned int lba_high = 0;
-            memcpy(&mbr_buf[i + 8], &lba_low, 4);
-            memcpy(&mbr_buf[i + 12], &lba_high, 4);
-            break;
+    if (install_stage == 1) {
+        // Stage 1: Write Sector 0 MBR
+        unsigned char mbr_buf[512];
+        memcpy(mbr_buf, (const void *)0x7C00, 512);
+
+        // Ensure DAP starting LBA is set to 1 for installed hard disk
+        for (int i = 0; i < 400; i++) {
+            if (mbr_buf[i] == 0x10 && mbr_buf[i+1] == 0x00 && mbr_buf[i+2] == 0x40 && mbr_buf[i+3] == 0x00) {
+                unsigned int lba_low = 1;
+                unsigned int lba_high = 0;
+                memcpy(&mbr_buf[i + 8], &lba_low, 4);
+                memcpy(&mbr_buf[i + 12], &lba_high, 4);
+                break;
+            }
         }
-    }
-    // Ensure signature 0x55AA is present
-    mbr_buf[510] = 0x55;
-    mbr_buf[511] = 0xAA;
+        // Force is_live_default = 0 (offset 391) so hard disk boots as installed
+        mbr_buf[391] = 0;
+        mbr_buf[510] = 0x55;
+        mbr_buf[511] = 0xAA;
 
-    int res = ata_write_sector(0, mbr_buf);
-    if (res != 0) {
-        strncpy(install_status_msg, "Error: Failed to write Sector 0 MBR!", sizeof(install_status_msg));
+        int res = ata_write_sector(0, mbr_buf);
+        if (res != 0) {
+            install_error = 1;
+            snprintf(install_err_msg, sizeof(install_err_msg), "Failed to write Sector 0 MBR (code %d)", res);
+            return;
+        }
+        ata_flush_cache();
+
+        install_stage = 2;
+        install_chunk = 0;
+        install_progress = 25;
+        strncpy(install_status_msg, "Copying Protected Mode Kernel (512 KB)...", sizeof(install_status_msg));
         return;
     }
-    install_stage = 1;
-    install_progress = 25;
 
-    // 2. Write 32-bit Protected Mode Kernel to Sectors 1..960 (480 KB from 0x10000)
-    strncpy(install_status_msg, "Writing Protected Mode Kernel to LBA 1..960...", sizeof(install_status_msg));
-    res = ata_write_sectors(1, 960, (const void *)0x10000);
-    if (res != 0) {
-        strncpy(install_status_msg, "Error: Failed to write Kernel to sectors 1..960!", sizeof(install_status_msg));
+    if (install_stage == 2) {
+        // Stage 2: Stream kernel in chunks of 128 sectors (64 KB) across frames
+        int lba = 1 + (install_chunk * KERNEL_CHUNK_SECTORS);
+        const void *src = (const void *)(0x10000 + (install_chunk * KERNEL_CHUNK_SECTORS * 512));
+
+        int res = ata_write_sectors(lba, KERNEL_CHUNK_SECTORS, src);
+        if (res != 0) {
+            install_error = 1;
+            snprintf(install_err_msg, sizeof(install_err_msg), "Failed writing Kernel at LBA %d (code %d)", lba, res);
+            return;
+        }
+
+        install_chunk++;
+        install_progress = 25 + (install_chunk * 5); // 30%..65%
+        snprintf(install_status_msg, sizeof(install_status_msg), "Writing Kernel chunk %d of 8 (%d KB / 512 KB)...",
+                 install_chunk, install_chunk * 64);
+
+        if (install_chunk >= (KERNEL_TOTAL_SECTORS / KERNEL_CHUNK_SECTORS)) {
+            install_stage = 3;
+            install_progress = 70;
+            strncpy(install_status_msg, "Configuring user credentials and system files...", sizeof(install_status_msg));
+        }
         return;
     }
-    install_stage = 2;
-    install_progress = 55;
 
-    // 3. Prepare User Configuration & System Profile
-    strncpy(install_status_msg, "Configuring user credentials and system files...", sizeof(install_status_msg));
+    if (install_stage == 3) {
+        // Stage 3: Prepare User Configuration & System Profile in VFS
+        char user_cfg[300];
+        rtc_time_t t;
+        rtc_get_datetime(&t);
+        snprintf(user_cfg, sizeof(user_cfg),
+                 "[USER]\nNAME=%s\nUSERNAME=%s\nHOSTNAME=%s\nPASSWORD=%s\nINSTALLED=1\nINSTALL_DATE=%04u-%02u-%02u\n",
+                 in_fullname, in_username, in_hostname, in_password, t.year, t.month, t.day);
 
-    char user_cfg[300];
-    rtc_time_t t;
-    rtc_get_datetime(&t);
-    snprintf(user_cfg, sizeof(user_cfg),
-             "[USER]\nNAME=%s\nUSERNAME=%s\nHOSTNAME=%s\nPASSWORD=%s\nINSTALLED=1\nINSTALL_DATE=%04u-%02u-%02u\n",
-             in_fullname, in_username, in_hostname, in_password, t.year, t.month, t.day);
+        if (vfs_find("USER.CFG")) {
+            vfs_write_file("USER.CFG", user_cfg, strlen(user_cfg));
+        } else {
+            vfs_create_file("USER.CFG", "System", user_cfg, strlen(user_cfg), FS_ATTR_SYSTEM);
+        }
 
-    if (vfs_find("USER.CFG")) {
-        vfs_write_file("USER.CFG", user_cfg, strlen(user_cfg));
-    } else {
-        vfs_create_file("USER.CFG", "System", user_cfg, strlen(user_cfg), FS_ATTR_SYSTEM);
+        char sys_cfg[400];
+        snprintf(sys_cfg, sizeof(sys_cfg),
+                 "# AuraOS Desktop Configuration\n[STORAGE]\nDRIVER=ATA_PIO\nPRIMARY_BUS=%s\nLBA_OFFSET=1000\nINSTALLED=TRUE\n[SYSTEM]\nHOSTNAME=%s\nUSER=%s\n[DESKTOP]\nWALLPAPER=0\nTHEME=0\nMOUSE_SPEED=1\n",
+                 ata_get_location_string(), in_hostname, in_username);
+
+        if (vfs_find("SYSTEM.CFG")) {
+            vfs_write_file("SYSTEM.CFG", sys_cfg, strlen(sys_cfg));
+        } else {
+            vfs_create_file("SYSTEM.CFG", "System", sys_cfg, strlen(sys_cfg), FS_ATTR_SYSTEM);
+        }
+
+        char startup_sh[200];
+        snprintf(startup_sh, sizeof(startup_sh),
+                 "# AuraOS Bootup Script\necho \"Welcome %s to AuraOS on %s!\"\nsync\nuptime\n",
+                 in_username, in_hostname);
+
+        if (vfs_find("STARTUP.SH")) {
+            vfs_write_file("STARTUP.SH", startup_sh, strlen(startup_sh));
+        } else {
+            vfs_create_file("STARTUP.SH", "Documents", startup_sh, strlen(startup_sh), FS_ATTR_USER);
+        }
+
+        install_stage = 4;
+        install_progress = 85;
+        strncpy(install_status_msg, "Writing AuraOS Superblock and syncing VFS...", sizeof(install_status_msg));
+        return;
     }
 
-    char sys_cfg[400];
-    snprintf(sys_cfg, sizeof(sys_cfg),
-             "# AuraOS Desktop Configuration\n[STORAGE]\nDRIVER=ATA_PIO\nPRIMARY_BUS=0x1F0\nLBA_OFFSET=1000\nINSTALLED=TRUE\n[SYSTEM]\nHOSTNAME=%s\nUSER=%s\n[DESKTOP]\nWALLPAPER=0\nTHEME=0\nMOUSE_SPEED=1\n",
-             in_hostname, in_username);
+    if (install_stage == 4) {
+        // Stage 4: Sync Superblock and Flush disk cache
+        vfs_sync_disk();
+        ata_flush_cache();
 
-    if (vfs_find("SYSTEM.CFG")) {
-        vfs_write_file("SYSTEM.CFG", sys_cfg, strlen(sys_cfg));
-    } else {
-        vfs_create_file("SYSTEM.CFG", "System", sys_cfg, strlen(sys_cfg), FS_ATTR_SYSTEM);
+        install_stage = 5;
+        install_progress = 100;
+        strncpy(install_status_msg, "Installation complete!", sizeof(install_status_msg));
+        return;
     }
 
-    char startup_sh[200];
-    snprintf(startup_sh, sizeof(startup_sh),
-             "# AuraOS Bootup Script\necho \"Welcome %s to AuraOS on %s!\"\nsync\nuptime\n",
-             in_username, in_hostname);
-
-    if (vfs_find("STARTUP.SH")) {
-        vfs_write_file("STARTUP.SH", startup_sh, strlen(startup_sh));
-    } else {
-        vfs_create_file("STARTUP.SH", "Documents", startup_sh, strlen(startup_sh), FS_ATTR_USER);
+    if (install_stage == 5) {
+        // Stage 5: Commit live system state and transition to Complete screen
+        sys_set_user_info(in_fullname, in_username, in_hostname, in_password);
+        sys_set_installed(1);
+        current_step = 4;
     }
-
-    install_stage = 3;
-    install_progress = 75;
-
-    // 4. Sync VFS Superblock and File Clusters to LBA 512+
-    strncpy(install_status_msg, "Writing AuraOS Superblock and syncing VFS...", sizeof(install_status_msg));
-    vfs_sync_disk();
-
-    // 5. Hardware ATA Cache Flush
-    outb(ATA_COMMAND_PORT, ATA_CMD_CACHE_FLUSH);
-
-    install_stage = 4;
-    install_progress = 100;
-    strncpy(install_status_msg, "Installation complete!", sizeof(install_status_msg));
-
-    // Update Live System State so installed status is immediately live
-    sys_set_user_info(in_fullname, in_username, in_hostname, in_password);
-    sys_set_installed(1);
-
-    current_step = 4; // Complete!
 }
 
 static void installer_draw(window_t *win) {
@@ -471,10 +554,9 @@ static void installer_draw(window_t *win) {
     int cy = wy + 20;
     int cw = client_w - sb_w - 40;
 
-    // If currently on step 3 (installing), execute the install steps
     if (current_step == 3) {
         installer_draw_step_installing(cx, cy, cw);
-        installer_perform_disk_write();
+        installer_process_step();
         return;
     }
 
@@ -497,7 +579,7 @@ static void installer_on_click(window_t *win, int cx, int cy, int btn) {
 
     if (current_step == 0) {
         // Step 0: Welcome
-        int btn_y = 20 + 50 + 170 + 46;
+        int btn_y = 20 + 50 + 175 + 44;
         // Close button
         if (cx >= content_x && cx <= content_x + 140 && cy >= btn_y && cy <= btn_y + 32) {
             wm_close_window(win);
@@ -548,7 +630,25 @@ static void installer_on_click(window_t *win, int cx, int cy, int btn) {
     } else if (current_step == 2) {
         // Step 2: Disk Target
         int card_y = 20 + 44;
-        int card_h = 130;
+        int card_h = 135;
+
+        // Switch drive button (if >1 drive detected)
+        if (ata_get_drive_count() > 1) {
+            if (cx >= content_x + content_w - 160 && cx <= content_x + content_w - 14 &&
+                cy >= card_y + 10 && cy <= card_y + 36) {
+                int cur = ata_get_active_drive();
+                for (int next = 1; next < 4; next++) {
+                    int cand = (cur + next) % 4;
+                    const ata_device_t *d = ata_get_device(cand);
+                    if (d && d->present && !d->is_atapi) {
+                        ata_select_drive(cand);
+                        break;
+                    }
+                }
+                return;
+            }
+        }
+
         int radio_y = card_y + card_h + 14;
         int btn_y = radio_y + 76;
 
@@ -562,11 +662,39 @@ static void installer_on_click(window_t *win, int cx, int cy, int btn) {
         if (cx >= content_x + content_w - 160 && cx <= content_x + content_w &&
             cy >= btn_y && cy <= btn_y + 32) {
             if (!ata_is_available()) return;
-            current_step = 3; // Trigger installation
+            current_step = 3;
             install_progress = 5;
             install_stage = 0;
-            strncpy(install_status_msg, "Starting disk installation...", sizeof(install_status_msg));
+            install_chunk = 0;
+            install_error = 0;
+            install_err_msg[0] = '\0';
+            strncpy(install_status_msg, "Initializing target hard disk...", sizeof(install_status_msg));
             return;
+        }
+    } else if (current_step == 3) {
+        // Step 3 error buttons
+        if (install_error) {
+            int err_y = 20 + 50;
+            int err_h = 130;
+            int btn_y = err_y + err_h + 30;
+
+            // [ < Disk Selection ]
+            if (cx >= content_x && cx <= content_x + 180 && cy >= btn_y && cy <= btn_y + 32) {
+                current_step = 2;
+                install_error = 0;
+                return;
+            }
+
+            // [ Retry Setup ]
+            if (cx >= content_x + content_w - 150 && cx <= content_x + content_w &&
+                cy >= btn_y && cy <= btn_y + 32) {
+                install_error = 0;
+                install_stage = 0;
+                install_chunk = 0;
+                install_progress = 5;
+                strncpy(install_status_msg, "Retrying installation...", sizeof(install_status_msg));
+                return;
+            }
         }
     } else if (current_step == 4) {
         // Step 4: Complete
@@ -643,12 +771,40 @@ static void installer_on_key(window_t *win, char key) {
 
     if (current_step == 2) {
         if (key == '\n' || key == '\r' || key == 'i' || key == 'I') {
+            if (!ata_is_available()) return;
             current_step = 3;
             install_progress = 5;
             install_stage = 0;
+            install_chunk = 0;
+            install_error = 0;
+            install_err_msg[0] = '\0';
             strncpy(install_status_msg, "Starting disk installation...", sizeof(install_status_msg));
         } else if (key == 'b' || key == 'B') {
             current_step = 1;
+        } else if ((key == 's' || key == 'S' || key == '\t') && ata_get_drive_count() > 1) {
+            int cur = ata_get_active_drive();
+            for (int next = 1; next < 4; next++) {
+                int cand = (cur + next) % 4;
+                const ata_device_t *d = ata_get_device(cand);
+                if (d && d->present && !d->is_atapi) {
+                    ata_select_drive(cand);
+                    break;
+                }
+            }
+        }
+        return;
+    }
+
+    if (current_step == 3 && install_error) {
+        if (key == 'r' || key == 'R' || key == '\n' || key == '\r') {
+            install_error = 0;
+            install_stage = 0;
+            install_chunk = 0;
+            install_progress = 5;
+            strncpy(install_status_msg, "Retrying installation...", sizeof(install_status_msg));
+        } else if (key == 'b' || key == 'B') {
+            current_step = 2;
+            install_error = 0;
         }
         return;
     }
@@ -672,6 +828,9 @@ void app_installer_launch(void) {
     current_step = 0;
     install_progress = 0;
     install_stage = 0;
+    install_chunk = 0;
+    install_error = 0;
+    install_err_msg[0] = '\0';
 
     int win_w = 680;
     int win_h = 460;

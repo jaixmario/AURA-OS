@@ -134,7 +134,7 @@ int vfs_sync_disk(void) {
     ata_write_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &disk_sb);
 
     // Hardware ATA Cache Flush to physically commit sectors before reboot
-    outb(ATA_COMMAND_PORT, ATA_CMD_CACHE_FLUSH);
+    ata_flush_cache();
     return 0;
 }
 
