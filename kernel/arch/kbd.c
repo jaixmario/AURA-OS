@@ -33,6 +33,8 @@ static const char kbd_scancode_shift[128] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0
 };
 
+static int is_extended = 0;
+
 static void kbd_callback(registers_t *regs) {
     (void)regs;
     unsigned char status = inb(0x64);
@@ -44,6 +46,33 @@ static void kbd_callback(registers_t *regs) {
         return; // Mouse data arrived on keyboard port, ignore
     }
     last_scancode = scancode;
+
+    if (scancode == 0xE0) {
+        is_extended = 1;
+        return;
+    }
+
+    if (is_extended) {
+        is_extended = 0;
+        if (scancode & 0x80) {
+            return; // Break code (release)
+        }
+
+        char ext_ch = 0;
+        if (scancode == 0x48) ext_ch = (char)KEY_UP;
+        else if (scancode == 0x50) ext_ch = (char)KEY_DOWN;
+        else if (scancode == 0x4B) ext_ch = (char)KEY_LEFT;
+        else if (scancode == 0x4D) ext_ch = (char)KEY_RIGHT;
+
+        if (ext_ch != 0) {
+            int next = (kbd_head + 1) % KBD_BUFFER_SIZE;
+            if (next != kbd_tail) {
+                kbd_buffer[kbd_head] = ext_ch;
+                kbd_head = next;
+            }
+        }
+        return;
+    }
 
     // Shift press/release
     if (scancode == 0x2A || scancode == 0x36) {

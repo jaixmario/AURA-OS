@@ -975,7 +975,17 @@ void kernel_main(boot_info_t *bi) {
         if (!g_logged_in) {
             while (kbd_has_char()) {
                 char key = kbd_get_char();
-                handle_login_key(key);
+                if ((unsigned char)key == KEY_UP) {
+                    mouse_move_relative(0, -18);
+                } else if ((unsigned char)key == KEY_DOWN) {
+                    mouse_move_relative(0, 18);
+                } else if ((unsigned char)key == KEY_LEFT) {
+                    mouse_move_relative(-18, 0);
+                } else if ((unsigned char)key == KEY_RIGHT) {
+                    mouse_move_relative(18, 0);
+                } else {
+                    handle_login_key(key);
+                }
             }
 
             int mx = mouse_get_x();
@@ -995,12 +1005,31 @@ void kernel_main(boot_info_t *bi) {
         // 1. Process keyboard events
         while (kbd_has_char()) {
             char key = kbd_get_char();
+
+            // Keyboard Mousekeys: Arrow keys move the mouse cursor!
+            if ((unsigned char)key == KEY_UP) {
+                mouse_move_relative(0, -18);
+                continue;
+            } else if ((unsigned char)key == KEY_DOWN) {
+                mouse_move_relative(0, 18);
+                continue;
+            } else if ((unsigned char)key == KEY_LEFT) {
+                mouse_move_relative(-18, 0);
+                continue;
+            } else if ((unsigned char)key == KEY_RIGHT) {
+                mouse_move_relative(18, 0);
+                continue;
+            }
+
             window_t *act = wm_get_active_window();
             if (act && act->is_open && !act->is_minimized) {
                 wm_handle_key(key);
             } else {
                 // Desktop keyboard shortcuts
-                if (key == 27 || key == ' ') {
+                if (key == '\r' || key == '\n') {
+                    // Enter key triggers click at current cursor location
+                    mouse_inject_click(1, 0);
+                } else if (key == 27 || key == ' ') {
                     start_menu_open = !start_menu_open;
                 } else if (!sys_is_installed() && (key == 'i' || key == 'I')) {
                     app_installer_launch();

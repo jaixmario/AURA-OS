@@ -20,16 +20,18 @@ static int left_clicked = 0;
 static int mouse_speed_level = 1; // 0=Slow, 1=Normal, 2=Fast
 
 static inline void mouse_wait_write(void) {
-    int timeout = 5000;
+    int timeout = 100000;
     while (timeout--) {
         if ((inb(0x64) & 2) == 0) return;
+        io_wait();
     }
 }
 
 static inline void mouse_wait_read(void) {
-    int timeout = 5000;
+    int timeout = 100000;
     while (timeout--) {
         if ((inb(0x64) & 1) == 1) return;
+        io_wait();
     }
 }
 
@@ -151,37 +153,44 @@ void mouse_init(int screen_w, int screen_h) {
         outb(0x60, status);
     }
 
-    // 4. Reset & test auxiliary device presence
-    mouse_write(0xF6); // Set defaults
-    unsigned char ack = mouse_read();
-    int mouse_present = (ack == 0xFA);
+    // 4. Send Set Defaults (0xF6) and Enable Data Reporting (0xF4)
+    mouse_write(0xF6);
+    mouse_read(); // Read ACK if sent
 
-    if (mouse_present) {
-        // Set sample rate to 200 Hz
-        mouse_write(0xF3);
-        mouse_read();
-        mouse_write(200);
-        mouse_read();
+    mouse_write(0xF4);
+    mouse_read(); // Read ACK if sent
 
-        // Set resolution
-        mouse_write(0xE8);
-        mouse_read();
-        mouse_write(0x03);
-        mouse_read();
-
-        // Enable data reporting
-        mouse_write(0xF4);
-        mouse_read();
-
-        // Register handler and unmask IRQ12 on PIC
-        register_interrupt_handler(44, mouse_callback);
-        pic_unmask_irq(2);
-        pic_unmask_irq(12);
-    } else {
-        // No PS/2 mouse detected (modern laptops with I2C/HID touchpad e.g. Acer Aspire Lite)
-        // Keep IRQ12 masked to prevent unhandled interrupt storms!
-        pic_mask_irq(12);
+    // 5. Flush any leftover response bytes
+    for (int i = 0; i < 32; i++) {
+        if (inb(0x64) & 1) {
+            inb(0x60);
+        } else {
+            break;
+        }
     }
+
+    // 6. Register handler for IRQ12 (INT 44) and unmask IRQs
+    register_interrupt_handler(44, mouse_callback);
+    pic_unmask_irq(2);
+    pic_unmask_irq(12);
+}
+
+void mouse_move_relative(int dx, int dy) {
+    mouse_x += dx;
+    mouse_y += dy;
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_x >= max_x) mouse_x = max_x - 1;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_y >= max_y) mouse_y = max_y - 1;
+}
+
+void mouse_inject_click(int left, int right) {
+    if (left && !btn_left) {
+        left_clicked = 1;
+    }
+    btn_left = left;
+    btn_right = right;
+    prev_btn_left = left;
 }
 
 int mouse_get_x(void) {

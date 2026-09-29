@@ -11,5 +11,7 @@ int  mouse_clicked(int btn); // returns 1 once on left click release/press
 void mouse_set_speed(int level);
 int  mouse_get_speed(void);
 void mouse_set_bounds(int screen_w, int screen_h);
+void mouse_move_relative(int dx, int dy);
+void mouse_inject_click(int left, int right);
 
 #endif
