@@ -12,7 +12,9 @@ A custom 32-bit graphical operating system built from scratch, featuring a high-
 
 ## 🚀 Quick Start & Emulators
 
-### 1. Running in QEMU
+### 1. Running in QEMU (BIOS & UEFI)
+
+#### A. Running in Legacy BIOS Mode:
 Double-click `run.bat` in this folder, or run in PowerShell:
 ```powershell
 .\run.ps1
@@ -22,7 +24,30 @@ Or manually:
 & "C:\Program Files\qemu\qemu-system-x86_64.exe" -drive format=raw,file=auraos.img -m 256M -vga std
 ```
 
-### 2. Running in VMware (Workstation / Player / Fusion)
+#### B. Running in Modern UEFI Mode (OVMF + GOP):
+Double-click `run_uefi.bat` in this folder, or run in PowerShell:
+```powershell
+.\run_uefi.ps1
+```
+Or manually:
+```powershell
+& "C:\Program Files\qemu\qemu-system-x86_64.exe" -drive "if=pflash,format=raw,readonly=on,file=C:\Program Files\qemu\share\edk2-x86_64-code.fd" -cdrom auraos.iso -m 256M -vga std
+```
+
+### 2. Booting with Ventoy (USB)
+
+`auraos.iso` includes universal multi-boot support tailored for **Ventoy**:
+- **UEFI Mode**: Ventoy executes `\EFI\BOOT\BOOTX64.EFI` (or `BOOTIA32.EFI`) via the El Torito UEFI catalog entry (Platform ID `0xEF`) and FAT `efiboot.img`.
+- **Legacy BIOS Mode**: Ventoy boots the El Torito BIOS boot sector.
+
+**Instructions for Ventoy:**
+1. Install [Ventoy](https://www.ventoy.net/) onto your USB flash drive (if not already installed).
+2. Copy `auraos.iso` directly into the root or any folder of the Ventoy USB drive.
+3. Plug the USB drive into your PC / laptop and boot from USB.
+4. Select `auraos.iso` from the Ventoy menu.
+5. AuraOS will boot directly into the desktop in either UEFI or Legacy BIOS mode!
+
+### 3. Running in VMware (Workstation / Player / Fusion)
 You can boot AuraOS in VMware using either the **Bootable CD-ROM ISO** or the **Virtual Disk (VMDK)**:
 
 #### Method A: Using Bootable CD-ROM ISO (`auraos.iso`)
@@ -32,9 +57,9 @@ You can boot AuraOS in VMware using either the **Bootable CD-ROM ISO** or the **
    ```
    auraos.iso
    ```
-4. For Guest Operating System, choose **Other** -> Version: **Other** (In VMware, **Other** is the standard 32-bit x86 option, while **Other 64-bit** is also supported).
-5. Name your virtual machine (e.g. `AuraOS`) and allocate at least **128 MB RAM**.
-6. Power on the virtual machine. AuraOS will boot directly from the CD into the desktop!
+4. For Guest Operating System, choose **Other** -> Version: **Other** or **Other 64-bit**.
+5. Both **BIOS** and **UEFI** firmware types in VMware VM settings are supported!
+6. Allocate at least **128 MB RAM** and power on the virtual machine.
 
 #### Method B: Using Virtual Disk (`auraos.vmdk`)
 1. Create a new virtual machine -> Select **I will install the operating system later**.
@@ -42,33 +67,33 @@ You can boot AuraOS in VMware using either the **Bootable CD-ROM ISO** or the **
 3. When prompted for Disk, select **Use an existing virtual disk** -> Browse to `auraos.vmdk`.
 4. Power on the VM.
 
-### 3. Running in VirtualBox
-1. Click **New** -> Name: `AuraOS` -> Type: `Other` -> Version: `Other/Unknown (32-bit)`.
+### 4. Running in VirtualBox
+1. Click **New** -> Name: `AuraOS` -> Type: `Other` -> Version: `Other/Unknown (32-bit)` or `(64-bit)`.
 2. RAM: `256 MB` -> Storage: Choose `auraos.iso` as Optical Disk or `auraos.img` as Hard Disk.
-3. Start the virtual machine.
+3. In VM Settings -> System -> Motherboard: You can leave **Enable EFI** unchecked (BIOS) or checked (UEFI); both boot seamlessly!
+4. Start the virtual machine.
 
-### 4. Flashing to USB with Rufus & Booting on Real Devices
+### 5. Flashing to USB with Rufus & Booting on Real Devices
 
-`auraos.iso` is built as an **ISOHybrid** image with a Master Boot Record (MBR) and partition table at Sector 0 alongside standard El Torito CD-ROM boot records. This enables writing the ISO directly to USB flash drives to boot bare-metal PCs!
+`auraos.iso` is built as a **Universal ISOHybrid** image with dual El Torito boot records and an MBR partition table containing both Partition 1 (Active ISO hybrid) and Partition 2 (Type `0xEF` EFI System Partition).
 
 #### Writing with Rufus:
-1. Insert your USB flash drive (any size, 1 GB+ is plenty) and open **Rufus**.
+1. Insert your USB flash drive and open **Rufus**.
 2. Under **Device**, select your USB flash drive.
-3. Under **Boot selection**, click **SELECT** and choose `auraos.iso`.
-4. Rufus will display the notification:
-   > **"ISOHybrid image detected: ... As a result, DD image writing mode will be enforced."**
-5. Click **OK**. *(This is expected and normal for hybrid ISOs: Rufus writes the raw sector image directly to the USB drive, preserving the MBR and boot sector bit-for-bit).*
-6. Click **START**. Rufus will write the image to the USB drive.
+3. Under **Boot selection**, choose `auraos.iso`.
+4. Under **Target system**, choose **BIOS (or UEFI-CSM)** or **UEFI**.
+5. When prompted for image mode, select **Write in DD Image mode** or ISO mode.
+6. Click **START**. Rufus will write the bootable image to the USB drive.
 
 #### Booting on Real PC Hardware:
 1. Insert the USB drive into your target PC or laptop.
-2. Power on the PC and press the **Boot Menu key** (typically `F12`, `F8`, `F11`, `F9`, or `Esc` depending on your motherboard/laptop brand: Dell/Lenovo: `F12`, Asus: `F8`/`F9`, HP: `F9`, Acer: `F12`).
-3. Select your USB drive under **Legacy Boot** / **CSM** (AuraOS uses x86 32-bit BIOS/VBE architecture; if your PC is UEFI-only, ensure **CSM (Compatibility Support Module)** or **Legacy Boot** is enabled in BIOS setup).
+2. Power on the PC and press the **Boot Menu key** (`F12`, `F8`, `F11`, `F9`, or `Esc`).
+3. Select your USB drive under either **UEFI Boot** or **Legacy / CSM Boot**.
 4. The AuraOS bootloader will execute:
-   - **Automatic Hardware Detection**: The bootloader automatically queries your monitor over the VBE DDC bus, extracts its native resolution (e.g. 1920x1080 Full HD, 1600x900, 1366x768, 1280x800), and boots into it automatically with zero user intervention!
-   - You can also optionally press `1` to force 1920x1080 Full HD.
+   - In UEFI mode: Automatically queries the display via UEFI GOP (Graphics Output Protocol) and enters Full HD / native desktop resolution.
+   - In Legacy BIOS mode: Automatically queries the display via VBE DDC/EDID.
 5. You will land on the **Live Installation Desktop** (`* AURA OS Live Installation Media`).
-6. Double-click the **Install AuraOS** icon on the desktop to launch the permanent installation wizard and install AuraOS to your PC's internal hard drive!
+6. Double-click the **Install AuraOS** icon on the desktop to launch the permanent installation wizard!
 
 ---
 

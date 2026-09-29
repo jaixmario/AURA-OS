@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include "../kernel.h"
 #include "../libc/string.h"
 #include "../arch/rtc.h"
 #include "../arch/ata.h"
@@ -300,7 +301,10 @@ void vfs_init(void) {
     memset(files, 0, VFS_MAX_FILES * sizeof(vfs_file_t));
 
     int ata_ok = ata_init();
-    if (ata_ok == 0 || ata_is_available()) {
+    boot_info_t *bi = get_boot_info();
+    int is_live = (bi && bi->is_live_media != 0);
+
+    if ((ata_ok == 0 || ata_is_available()) && !is_live) {
         disk_backed = 1;
         memset(&disk_sb, 0, sizeof(disk_sb));
 

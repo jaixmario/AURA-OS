@@ -5,4 +5,4 @@ __pycache__/
 
 # Temporary screen captures
 *.ppm
-screenshot.bmp
+*.bmp
