@@ -66,13 +66,13 @@ static UINT32 setup_pae_paging(UINT64 fb_base, UINT32 fb_size) {
         pd3[i] = (((UINT64)i + 1536) * 0x200000ULL) | 0x83;
     }
 
-    // 3. If fb_base is below 4GB, identity mapping in pd0..pd3 already covers it
-    if (fb_base < 0x100000000ULL) {
-        return (UINT32)fb_base;
+    // 3. Map Framebuffer (both <4GB and >=4GB) to 32-bit virtual window 0xE0000000 (3.5 GB mark, index 256 in PD3)
+    // This allows the 32-bit protected mode kernel to access 64-bit physical framebuffers seamlessly,
+    // and guarantees identical execution paths in both QEMU testing and real laptop hardware.
+    if (fb_base == 0) {
+        return 0;
     }
 
-    // 4. fb_base is >= 4GB (Above 4G Decoding / AMD Ryzen 64-bit BAR):
-    // Map it to 32-bit virtual window 0xE0000000 (3.5 GB mark, index 256 in PD3)
     UINT64 page_offset = fb_base & 0x1FFFFFULL;
     UINT64 page_base   = fb_base & ~0x1FFFFFULL;
     UINT32 num_pages   = (fb_size + (UINT32)page_offset + 0x1FFFFF) / 0x200000;
@@ -148,9 +148,14 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     UINT32 fb_size = best_pitch * best_h;
     UINT32 mapped_fb = setup_pae_paging(fb_base, fb_size);
 
-    if (fb_base >= 0x100000000ULL && SystemTable && SystemTable->ConOut) {
-        SystemTable->ConOut->OutputString(SystemTable->ConOut,
-            L"[+] 64-bit Framebuffer mapped to 0xE0000000 via 32-bit PAE MMU!\r\n");
+    if (SystemTable && SystemTable->ConOut) {
+        if (fb_base >= 0x100000000ULL) {
+            SystemTable->ConOut->OutputString(SystemTable->ConOut,
+                L"[+] 64-bit Framebuffer mapped to 0xE0000000 via 32-bit PAE MMU!\r\n");
+        } else {
+            SystemTable->ConOut->OutputString(SystemTable->ConOut,
+                L"[+] Framebuffer mapped to 0xE0000000 via 32-bit PAE MMU!\r\n");
+        }
     }
 
     // 3. Populate boot_info_t structure at physical address 0x7000

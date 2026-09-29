@@ -20,14 +20,14 @@ static int left_clicked = 0;
 static int mouse_speed_level = 1; // 0=Slow, 1=Normal, 2=Fast
 
 static inline void mouse_wait_write(void) {
-    int timeout = 100000;
+    int timeout = 5000;
     while (timeout--) {
         if ((inb(0x64) & 2) == 0) return;
     }
 }
 
 static inline void mouse_wait_read(void) {
-    int timeout = 100000;
+    int timeout = 5000;
     while (timeout--) {
         if ((inb(0x64) & 1) == 1) return;
     }

@@ -905,6 +905,14 @@ void kernel_main(boot_info_t *bi) {
     if (bi->magic != 0x41555241) return;
     g_boot_info = bi;
 
+    // 0. Initialize Graphics Subsystem IMMEDIATELY so the display is lit & active
+    gfx_init(bi);
+    gfx_clear(RGB(24, 25, 38));
+    if (bi->width >= 300 && bi->height >= 100) {
+        gfx_draw_string(bi->width / 2 - 64, bi->height / 2 - 8, "Starting AuraOS...", COLOR_WHITE, COLOR_TRANSPARENT);
+    }
+    gfx_swap_buffers();
+
     // Detect Boot Mode: Live CD / ISO vs Installed Hard Disk
     if (bi->is_live_media == 0) {
         g_system_installed = 1; // Booted from hard disk
@@ -938,11 +946,8 @@ void kernel_main(boot_info_t *bi) {
     // Enable CPU interrupts!
     __asm__ volatile ("sti");
 
-    // 7. Initialize Graphics Subsystem
-    gfx_init(bi);
+    // 7. Initialize Display Driver & Wallpaper Engine
     display_init();
-
-    // Initialize Real Photographic Wallpaper Engine
     wallpaper_init();
 
     // Load persistent system settings (saved wallpaper, mouse speed, etc.)

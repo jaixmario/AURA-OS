@@ -49,22 +49,29 @@ unpaged_mode:
     btr eax, 8                  ; Clear LME
     wrmsr
 
-    ; Load CR3 with our 32-bit PAE PDPT at physical 0x8000
-    mov eax, 0x8000
-    mov cr3, eax
-
-    ; Enable PAE in CR4 (bit 5)
+    ; 1. Enable PAE in CR4 (bit 5) FIRST!
+    ; Per Intel SDM Vol 3A §4.4.1 & AMD64 Architecture Manual Vol 2 §5.2.2:
+    ; Setting CR4.PAE = 1 BEFORE loading CR3 is required so that loading CR3
+    ; properly latches the 4 PDPTE registers from physical 0x8000 into internal CPU registers.
     mov eax, cr4
     bts eax, 5                  ; Set PAE
     mov cr4, eax
 
-    ; Enable Paging in CR0 (bit 31) -> enters 32-bit Protected Mode with PAE!
+    ; 2. Load CR3 with our 32-bit PAE PDPT at physical 0x8000
+    mov eax, 0x8000
+    mov cr3, eax
+
+    ; 3. Enable Paging in CR0 (bit 31) -> enters 32-bit Protected Mode with PAE!
     mov eax, cr0
     bts eax, 31                 ; Set PG
     mov cr0, eax
     jmp pae_paged_64
 
 pae_paged_64:
+    ; Reload CR3 while CR0.PG=1 and CR4.PAE=1 to guarantee hardware PDPTE shadow registers are loaded
+    mov eax, 0x8000
+    mov cr3, eax
+
     ; Reload GDT in pure 32-bit protected mode
     lgdt [gdt_descriptor_32]
     mov ax, 0x10
@@ -100,22 +107,26 @@ entry32:
     jmp unpaged_32
 
 unpaged_32:
-    ; Load CR3 with our 32-bit PAE PDPT at physical 0x8000
-    mov eax, 0x8000
-    mov cr3, eax
-
-    ; Enable PAE in CR4
+    ; 1. Enable PAE in CR4 (bit 5) FIRST!
     mov eax, cr4
     bts eax, 5
     mov cr4, eax
 
-    ; Enable Paging in CR0
+    ; 2. Load CR3 with our 32-bit PAE PDPT at physical 0x8000
+    mov eax, 0x8000
+    mov cr3, eax
+
+    ; 3. Enable Paging in CR0
     mov eax, cr0
     bts eax, 31
     mov cr0, eax
     jmp pae_paged_32
 
 pae_paged_32:
+    ; Reload CR3 while CR0.PG=1 and CR4.PAE=1
+    mov eax, 0x8000
+    mov cr3, eax
+
     lgdt [gdt_descriptor_32]
     mov ax, 0x10
     mov ds, ax
