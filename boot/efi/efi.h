@@ -20,6 +20,7 @@ typedef int INTN;
 typedef UINT16 CHAR16;
 typedef unsigned char BOOLEAN;
 typedef void VOID;
+typedef UINT64 EFI_PHYSICAL_ADDRESS;
 
 #define TRUE 1
 #define FALSE 0

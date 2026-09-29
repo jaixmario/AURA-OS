@@ -5,10 +5,10 @@
 #include "../libc/string.h"
 
 // Dedicated safe buffers in extended memory:
-// 0x00C00000 (12MB mark): Active screen-resolution wallpaper buffer (up to 1920x1080x4 = 8.3MB)
-// 0x01200000 (18MB mark): Temporary 1024x768 decoded source buffer (3.1MB)
+// 0x00C00000 (12MB mark): Active screen-resolution wallpaper buffer (up to 1920x1080x4 = 8.3MB, ends at ~20.3MB)
+// 0x01500000 (21MB mark): Temporary 1024x768 decoded source buffer (3.1MB, ends at ~24.1MB)
 static unsigned int *g_wallpaper_buf = (unsigned int *)0x00C00000;
-static unsigned int *g_raw_1024      = (unsigned int *)0x01200000;
+static unsigned int *g_raw_1024      = (unsigned int *)0x01500000;
 
 static int g_current_wallpaper = 0;
 static int g_loaded_wallpaper = -1;

@@ -36,54 +36,73 @@ static void *memset(void *s, int c, UINTN n) {
 EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     EFI_STATUS status;
 
-    // 1. Locate Graphics Output Protocol (GOP)
+    if (SystemTable && SystemTable->ConOut) {
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"AuraOS UEFI Bootloader starting...\r\n");
+    }
+
+    // 1. Allocate fixed physical pages for Trampoline (0x6000) and Kernel (0x10000)
+    // to prevent UEFI from using these regions for page tables or runtime buffers
+    EFI_PHYSICAL_ADDRESS addr_tramp = 0x6000;
+    SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 2, &addr_tramp);
+
+    EFI_PHYSICAL_ADDRESS addr_kernel = 0x10000;
+    SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 128, &addr_kernel);
+
+    // 2. Locate Graphics Output Protocol (GOP)
     EFI_GUID gop_guid = { 0x9042a9de, 0x23dc, 0x4a38, { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } };
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
     status = SystemTable->BootServices->LocateProtocol(&gop_guid, NULL, (VOID **)&gop);
 
-    UINT32 chosen_mode = 0;
     UINT32 best_w = 1024;
     UINT32 best_h = 768;
     UINT32 best_pitch = 1024 * 4;
     UINT64 fb_base = 0;
 
-    if (status == EFI_SUCCESS && gop != NULL) {
-        chosen_mode = gop->Mode->Mode;
-        if (gop->Mode->Info) {
+    if (status == EFI_SUCCESS && gop != NULL && gop->Mode != NULL) {
+        // On modern laptops (e.g. Acer Aspire Lite AL15-41 with 1080p eDP panel),
+        // the UEFI firmware already initializes GOP to the panel's native mode.
+        // Forcing SetMode away from native often blanks the screen or turns off the panel.
+        if (gop->Mode->Info && gop->Mode->Info->HorizontalResolution >= 800) {
             best_w = gop->Mode->Info->HorizontalResolution;
             best_h = gop->Mode->Info->VerticalResolution;
-            best_pitch = gop->Mode->Info->PixelsPerScanLine * 4;
+            best_pitch = (gop->Mode->Info->PixelsPerScanLine > 0) ? (gop->Mode->Info->PixelsPerScanLine * 4) : (best_w * 4);
             fb_base = gop->Mode->FrameBufferBase;
-        }
-
-        // Search for preferred 1024x768 resolution
-        for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
-            EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = NULL;
-            UINTN size_of_info = 0;
-            if (gop->QueryMode(gop, m, &size_of_info, &info) == EFI_SUCCESS && info) {
-                if (info->HorizontalResolution == 1024 && info->VerticalResolution == 768) {
-                    chosen_mode = m;
-                    best_w = 1024;
-                    best_h = 768;
-                    best_pitch = info->PixelsPerScanLine * 4;
-                    break;
+        } else {
+            // Search for preferred 1024x768 resolution if current mode is missing or low-res (e.g. QEMU)
+            UINT32 chosen_mode = gop->Mode->Mode;
+            for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
+                EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = NULL;
+                UINTN size_of_info = 0;
+                if (gop->QueryMode(gop, m, &size_of_info, &info) == EFI_SUCCESS && info) {
+                    if (info->HorizontalResolution == 1024 && info->VerticalResolution == 768) {
+                        chosen_mode = m;
+                        best_w = 1024;
+                        best_h = 768;
+                        best_pitch = (info->PixelsPerScanLine > 0) ? (info->PixelsPerScanLine * 4) : (1024 * 4);
+                        break;
+                    }
                 }
             }
-        }
 
-        if (chosen_mode != gop->Mode->Mode) {
-            gop->SetMode(gop, chosen_mode);
-        }
+            if (chosen_mode != gop->Mode->Mode) {
+                gop->SetMode(gop, chosen_mode);
+            }
 
-        if (gop->Mode && gop->Mode->Info) {
-            best_w = gop->Mode->Info->HorizontalResolution;
-            best_h = gop->Mode->Info->VerticalResolution;
-            best_pitch = gop->Mode->Info->PixelsPerScanLine * 4;
-            fb_base = gop->Mode->FrameBufferBase;
+            if (gop->Mode && gop->Mode->Info) {
+                best_w = gop->Mode->Info->HorizontalResolution;
+                best_h = gop->Mode->Info->VerticalResolution;
+                best_pitch = (gop->Mode->Info->PixelsPerScanLine > 0) ? (gop->Mode->Info->PixelsPerScanLine * 4) : (best_w * 4);
+                fb_base = gop->Mode->FrameBufferBase;
+            }
         }
     }
 
-    // 2. Populate boot_info_t structure at physical address 0x7000
+    if (fb_base >= 0x100000000ULL && SystemTable && SystemTable->ConOut) {
+        SystemTable->ConOut->OutputString(SystemTable->ConOut,
+            L"[!] Warning: GOP FrameBuffer is above 4GB. If blackscreen occurs, disable 'Above 4G Decoding' in BIOS.\r\n");
+    }
+
+    // 3. Populate boot_info_t structure at physical address 0x7000
     boot_info_t *bi = (boot_info_t *)0x7000;
     memset(bi, 0, sizeof(boot_info_t));
     bi->magic = 0x41555241; // 'AURA'
@@ -95,35 +114,35 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     bi->is_live_media = 1;
     bi->boot_drive = 0x80;
 
-    // 3. Exit Boot Services
-    UINT8 mmap_buffer[32768];
+    // 4. Exit Boot Services (with retry loop)
+    UINT8 mmap_buffer[65536];
     UINTN mmap_size = sizeof(mmap_buffer);
     UINTN map_key = 0;
     UINTN desc_size = 0;
     UINT32 desc_ver = 0;
 
-    status = SystemTable->BootServices->GetMemoryMap(&mmap_size, (EFI_MEMORY_DESCRIPTOR *)mmap_buffer,
-                                                    &map_key, &desc_size, &desc_ver);
-    if (status == EFI_SUCCESS) {
-        status = SystemTable->BootServices->ExitBootServices(ImageHandle, map_key);
-        if (status != EFI_SUCCESS) {
-            mmap_size = sizeof(mmap_buffer);
-            SystemTable->BootServices->GetMemoryMap(&mmap_size, (EFI_MEMORY_DESCRIPTOR *)mmap_buffer,
-                                                   &map_key, &desc_size, &desc_ver);
+    for (int retry = 0; retry < 5; retry++) {
+        mmap_size = sizeof(mmap_buffer);
+        status = SystemTable->BootServices->GetMemoryMap(&mmap_size, (EFI_MEMORY_DESCRIPTOR *)mmap_buffer,
+                                                        &map_key, &desc_size, &desc_ver);
+        if (status == EFI_SUCCESS) {
             status = SystemTable->BootServices->ExitBootServices(ImageHandle, map_key);
+            if (status == EFI_SUCCESS) {
+                break;
+            }
         }
     }
 
-    // 4. Disable interrupts
+    // 5. Disable interrupts
     __asm__ volatile ("cli");
 
-    // 5. Copy Kernel to physical 0x10000
+    // 6. Copy Kernel to physical 0x10000
     memcpy((void *)0x10000, kernel_bin_data, kernel_bin_size);
 
-    // 6. Copy Trampoline to physical 0x6000
+    // 7. Copy Trampoline to physical 0x6000
     memcpy((void *)0x6000, trampoline_bin_data, trampoline_bin_size);
 
-    // 7. Jump to Trampoline entry64 at 0x6000
+    // 8. Jump to Trampoline entry64 at 0x6000
     void (*jump_trampoline)(void) = (void (*)(void))0x6000;
     jump_trampoline();
 

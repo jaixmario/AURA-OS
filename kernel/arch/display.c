@@ -104,16 +104,20 @@ int display_set_resolution(int width, int height) {
         applied_live = 1;
     }
 
-    // Always update boot_info structure & graphics engine
-    bi->width = width;
-    bi->height = height;
-    bi->pitch = width * 4;
-    bi->bpp = 32;
+    if (applied_live) {
+        // Only update active engine dimensions if hardware mode actually changed
+        bi->width = width;
+        bi->height = height;
+        bi->pitch = width * 4;
+        bi->bpp = 32;
 
-    gfx_set_resolution(width, height, width * 4, 32);
-    mouse_set_bounds(width, height);
-    wallpaper_invalidate();
-    wm_on_resolution_change(width, height);
+        gfx_set_resolution(width, height, width * 4, 32);
+        mouse_set_bounds(width, height);
+        wallpaper_invalidate();
+        wm_on_resolution_change(width, height);
+    } else if (width == bi->width && height == bi->height) {
+        applied_live = 1;
+    }
 
     // Save persistent settings to SYSTEM.CFG
     sys_set_setting_int("RES_WIDTH", width);
@@ -203,8 +207,14 @@ int display_auto_detect(void) {
 
     // Safety clamp to minimum usable graphical resolution
     if (target_w < 800 || target_h < 600) {
-        target_w = 1024;
-        target_h = 768;
+        boot_info_t *bi = get_boot_info();
+        if (bi && bi->width >= 800 && bi->height >= 600) {
+            target_w = bi->width;
+            target_h = bi->height;
+        } else {
+            target_w = 1024;
+            target_h = 768;
+        }
     }
 
     sys_set_setting("RES_AUTO", "1");

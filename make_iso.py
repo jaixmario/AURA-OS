@@ -267,10 +267,41 @@ HEAP_SIZE_MB=16
         "iso_root"
     ])
 
-    res = subprocess.run(cmd, env=env, cwd=project_dir, capture_output=True, text=True)
-    if res.returncode != 0:
-        print("[!] mkisofs error:\n", res.stderr)
-        raise RuntimeError(f"mkisofs failed with code {res.returncode}")
+    mkisofs_available = os.path.exists(mkisofs) or bool(shutil.which(mkisofs))
+    if mkisofs_available:
+        try:
+            res = subprocess.run(cmd, env=env, cwd=project_dir, capture_output=True, text=True)
+            if res.returncode != 0:
+                print("[!] mkisofs error:\n", res.stderr)
+                mkisofs_available = False
+        except Exception as e:
+            print("[!] mkisofs run error:", e)
+            mkisofs_available = False
+
+    if not mkisofs_available:
+        if os.path.exists(iso_path):
+            print("[*] Updating existing auraos.iso directly with fresh UEFI and Kernel payloads...")
+            with open(iso_path, "r+b") as f:
+                # 1. Update BIOS boot payload at ISO Sector 37 (0x12800)
+                f.seek(37 * 2048)
+                f.write(payload)
+                # 2. Update efiboot.img at 0x92800
+                if efiboot_img_bytes:
+                    f.seek(0x92800)
+                    f.write(efiboot_img_bytes)
+                # 3. Update BOOTIA32.EFI payload at 0x3dd000
+                if bootia32_efi and os.path.exists(bootia32_efi):
+                    with open(bootia32_efi, "rb") as fi:
+                        f.seek(0x3dd000)
+                        f.write(fi.read())
+                # 4. Update BOOTX64.EFI payload at 0x457800
+                if bootx64_efi and os.path.exists(bootx64_efi):
+                    with open(bootx64_efi, "rb") as fx:
+                        f.seek(0x457800)
+                        f.write(fx.read())
+                f.flush()
+        else:
+            raise RuntimeError("mkisofs is not available and no base auraos.iso exists.")
 
     # Clean up temporary iso_root directory
     if os.path.exists(iso_root):

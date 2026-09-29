@@ -6,8 +6,8 @@
 #define CANVAS_H 280
 #define CANVAS_BG RGB(22, 24, 35)
 
-// Dedicated safe buffer in extended memory (22MB mark, 0x01600000)
-static unsigned int * const paint_canvas = (unsigned int *)0x01600000;
+// Dedicated safe buffer in extended memory (25MB mark, 0x01900000)
+static unsigned int * const paint_canvas = (unsigned int *)0x01900000;
 
 static unsigned int active_color = COLOR_WHITE;
 static int active_tool = 1; // 0=1px (Pencil), 1=3px (Brush), 2=6px (Marker), 3=Eraser

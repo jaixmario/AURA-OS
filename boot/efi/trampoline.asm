@@ -28,6 +28,14 @@ compat_mode:
     mov gs, ax
     mov ss, ax
 
+    ; Crucial for modern AMD Ryzen / Intel CPUs (e.g. Acer Aspire Lite AL15-41):
+    ; Clear CR4.PCIDE (bit 17) and CR4.PGE (bit 7) before disabling paging!
+    ; Attempting to clear CR0.PG while CR4.PCIDE == 1 triggers an immediate #GP fault.
+    mov eax, cr4
+    btr eax, 17                 ; Clear PCIDE
+    btr eax, 7                  ; Clear PGE
+    mov cr4, eax
+
     ; Disable Paging
     mov eax, cr0
     btr eax, 31
@@ -38,7 +46,7 @@ unpaged_mode:
     ; Disable Long Mode in IA32_EFER MSR (0xC0000080)
     mov ecx, 0xC0000080
     rdmsr
-    btr eax, 8
+    btr eax, 8                  ; Clear LME
     wrmsr
 
     ; Disable PAE
@@ -55,12 +63,6 @@ unpaged_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Disable Local APIC (MSR 0x1B, bit 11) to route all interrupts to 8259 PIC
-    mov ecx, 0x1B
-    rdmsr
-    btr eax, 11
-    wrmsr
-
     mov esp, 0x1FFFF0
     push 0x7000
     jmp 0x08:0x10000
@@ -73,6 +75,12 @@ entry32:
     mov fs, ax
     mov gs, ax
     mov ss, ax
+
+    ; Clear CR4.PCIDE and PGE before disabling paging
+    mov eax, cr4
+    btr eax, 17
+    btr eax, 7
+    mov cr4, eax
 
     ; Disable Paging
     mov eax, cr0
@@ -93,12 +101,6 @@ unpaged_32:
     mov fs, ax
     mov gs, ax
     mov ss, ax
-
-    ; Disable Local APIC (MSR 0x1B, bit 11) to route all interrupts to 8259 PIC
-    mov ecx, 0x1B
-    rdmsr
-    btr eax, 11
-    wrmsr
 
     mov esp, 0x1FFFF0
     push 0x7000
