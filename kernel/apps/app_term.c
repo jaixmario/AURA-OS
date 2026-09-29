@@ -350,7 +350,7 @@ static void term_execute_command(void) {
         term_add_line("Custom Bare-Metal Graphical Operating System");
     } else if (strcmp(input_buf, "reboot") == 0) {
         term_add_line("Rebooting system...");
-        outb(0x64, 0xFE); // Pulse reset line via keyboard controller
+        sys_reboot();
     } else {
         char err[64];
         snprintf(err, sizeof(err), "Unknown command: %s (type 'help')", input_buf);

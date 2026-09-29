@@ -63,6 +63,8 @@ static void kbd_callback(registers_t *regs) {
         else if (scancode == 0x50) ext_ch = (char)KEY_DOWN;
         else if (scancode == 0x4B) ext_ch = (char)KEY_LEFT;
         else if (scancode == 0x4D) ext_ch = (char)KEY_RIGHT;
+        else if (scancode == 0x5B || scancode == 0x5C || scancode == 0x5D) ext_ch = (char)KEY_SUPER; // Windows Key / Menu Key!
+        else if (scancode == 0x47) ext_ch = (char)KEY_HOME; // Home Key
 
         if (ext_ch != 0) {
             int next = (kbd_head + 1) % KBD_BUFFER_SIZE;
@@ -101,6 +103,13 @@ static void kbd_callback(registers_t *regs) {
         ch = kbd_scancode_shift[scancode];
     } else {
         ch = kbd_scancode_normal[scancode];
+        if (ch == 0) {
+            if (scancode == 0x48) ch = (char)KEY_UP;
+            else if (scancode == 0x50) ch = (char)KEY_DOWN;
+            else if (scancode == 0x4B) ch = (char)KEY_LEFT;
+            else if (scancode == 0x4D) ch = (char)KEY_RIGHT;
+            else if (scancode == 0x47) ch = (char)KEY_HOME;
+        }
         if (is_upper && ch >= 'a' && ch <= 'z') {
             ch -= 32;
         }

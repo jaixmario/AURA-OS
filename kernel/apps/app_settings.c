@@ -448,7 +448,7 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
         int reb_x = cx + cw - 104;
         int reb_y = info_y + 16;
         if (rx >= reb_x && rx <= reb_x + 96 && ry >= reb_y && ry <= reb_y + 26) {
-            outb(0x64, 0xFE); // Pulse CPU reset
+            sys_reboot();
             return;
         }
     }

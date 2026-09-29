@@ -87,6 +87,47 @@ void sys_set_user_info(const char *fullname, const char *username, const char *h
     }
 }
 
+void sys_shutdown(void) {
+    vfs_sync_disk();
+    __asm__ volatile ("cli");
+    outw(0x604, 0x2000);  // QEMU shutdown
+    outw(0xB004, 0x2000); // Bochs shutdown
+    outw(0x4004, 0x3400); // VirtualBox shutdown
+    while (1) {
+        __asm__ volatile ("cli; hlt");
+    }
+}
+
+void sys_reboot(void) {
+    // 1. Commit and sync all file system buffers
+    vfs_sync_disk();
+
+    // 2. Disable CPU interrupts
+    __asm__ volatile ("cli");
+
+    // 3. ACPI / PCI Reset via port 0xCF9 (AMD Ryzen / Acer Aspire Lite / modern x86 standard)
+    outb(0xCF9, 0x02);
+    outb(0xCF9, 0x06);
+
+    // 4. PS/2 8042 keyboard controller reset pulse
+    for (int i = 0; i < 10000; i++) {
+        if ((inb(0x64) & 0x02) == 0) break;
+    }
+    outb(0x64, 0xFE);
+
+    // 5. Fallback: Triple fault CPU reset
+    struct {
+        unsigned short limit;
+        unsigned int base;
+    } __attribute__((packed)) null_idt = { 0, 0 };
+    __asm__ volatile ("lidt %0; int $3" : : "m"(null_idt));
+
+    // 6. Halt loop fallback
+    while (1) {
+        __asm__ volatile ("hlt");
+    }
+}
+
 static void load_user_profile(void) {
     vfs_file_t *f = vfs_find("USER.CFG");
     if (!f || f->size == 0) return;
@@ -331,15 +372,40 @@ boot_info_t *get_boot_info(void) {
 static void draw_wallpaper(void) {
     wallpaper_draw_desktop();
 
-    // Centered Desktop Brand Watermark with drop shadow
     int w = gfx_get_width();
     int h = gfx_get_height();
-    gfx_draw_string_shadow(w / 2 - 40, h / 2 - 30, "* AURA OS", COLOR_WHITE, COLOR_SHADOW);
+
+    // 1. Centered Desktop Brand Watermark with drop shadow
+    gfx_draw_string_shadow(w / 2 - 40, h / 2 - 44, "* AURA OS", COLOR_WHITE, COLOR_SHADOW);
     if (!sys_is_installed()) {
-        gfx_draw_string_shadow(w / 2 - 76, h / 2 - 10, "Live Installation Media", RGB(220, 230, 255), COLOR_SHADOW);
+        gfx_draw_string_shadow(w / 2 - 76, h / 2 - 24, "Live Installation Media", RGB(220, 230, 255), COLOR_SHADOW);
     } else {
-        gfx_draw_string_shadow(w / 2 - 80, h / 2 - 10, "Modern x86 Graphical System", RGB(220, 230, 255), COLOR_SHADOW);
+        gfx_draw_string_shadow(w / 2 - 80, h / 2 - 24, "Modern x86 Graphical System", RGB(220, 230, 255), COLOR_SHADOW);
     }
+
+    // 2. Dynamic Own Screen & Display Hardware Information
+    char res_info[64];
+    const char *ratio = (w * 9 == h * 16) ? "16:9 Full HD" :
+                        (w * 10 == h * 16) ? "16:10 Widescreen" :
+                        (w * 3 == h * 4) ? "4:3 Standard" : "Custom Ratio";
+    snprintf(res_info, sizeof(res_info), "Screen: %d x %d (%s) @ 32bpp", w, h, ratio);
+    int res_x = (w - (strlen(res_info) * 8)) / 2;
+    gfx_draw_string_shadow(res_x, h / 2 + 4, res_info, RGB(180, 220, 255), COLOR_SHADOW);
+
+    char hw_info[80];
+    snprintf(hw_info, sizeof(hw_info), "Display Panel: Acer Aspire Lite 15.6\" | %s", display_get_adapter_name());
+    int hw_x = (w - (strlen(hw_info) * 8)) / 2;
+    gfx_draw_string_shadow(hw_x, h / 2 + 24, hw_info, RGB(150, 185, 230), COLOR_SHADOW);
+
+    // 3. Navigation shortcuts guide for keyboard & touchpad users
+    const char *tip_str = "[Win] Menu | [Home] Center Mouse | [Arrows/WASD] Move | [Enter] Click | [U-U-R] Restart";
+    int tip_x = (w - (strlen(tip_str) * 8)) / 2;
+    gfx_draw_string_shadow(tip_x, h / 2 + 48, tip_str, RGB(140, 210, 180), COLOR_SHADOW);
+
+    // 4. Compact screen resolution badge in lower right corner
+    char corner_buf[32];
+    snprintf(corner_buf, sizeof(corner_buf), "%dx%d 32bpp", w, h);
+    gfx_draw_string_shadow(w - (strlen(corner_buf) * 8) - 16, h - 66, corner_buf, RGB(160, 190, 225), COLOR_SHADOW);
 }
 
 typedef struct {
@@ -521,7 +587,7 @@ static void draw_start_menu(void) {
     int menu_w = 210;
     int is_inst = sys_is_installed();
     int num_items = 8;
-    int menu_h = 362;
+    int menu_h = 398;
     int menu_y = h - 48 - menu_h - 8;
 
     // Drop shadow
@@ -556,18 +622,40 @@ static void draw_start_menu(void) {
     int my = mouse_get_y();
 
     for (int i = 0; i < num_items; i++) {
-        int item_y = menu_y + 42 + (i * 38);
+        int item_y = menu_y + 40 + (i * 36);
         int is_hover = (mx >= menu_x + 6 && mx <= menu_x + menu_w - 6 &&
-                        my >= item_y && my <= item_y + 32);
+                        my >= item_y && my <= item_y + 30);
 
         if (is_hover) {
-            gfx_fillrect(menu_x + 6, item_y, menu_w - 12, 32, RGB(49, 50, 68));
-            gfx_drawrect(menu_x + 6, item_y, menu_w - 12, 32, COLOR_ACCENT);
+            gfx_fillrect(menu_x + 6, item_y, menu_w - 12, 30, RGB(49, 50, 68));
+            gfx_drawrect(menu_x + 6, item_y, menu_w - 12, 30, COLOR_ACCENT);
         }
 
         unsigned int fg = is_hover ? COLOR_WHITE : ((!is_inst && i == 0) ? COLOR_ACCENT : (is_inst && i == 7) ? COLOR_YELLOW : COLOR_TEXT);
-        gfx_draw_string(menu_x + 16, item_y + 8, items[i], fg, COLOR_TRANSPARENT);
+        gfx_draw_string(menu_x + 16, item_y + 7, items[i], fg, COLOR_TRANSPARENT);
     }
+
+    // Bottom Power / Reboot Bar
+    int foot_y = menu_y + menu_h - 40;
+    gfx_draw_line(menu_x + 6, foot_y - 4, menu_x + menu_w - 6, foot_y - 4, COLOR_BORDER);
+
+    // [ ⟳ Restart ] button
+    int reb_x = menu_x + 8;
+    int reb_w = 92;
+    int reb_h = 30;
+    int is_hover_reb = (mx >= reb_x && mx <= reb_x + reb_w && my >= foot_y && my <= foot_y + reb_h);
+    gfx_fillrect(reb_x, foot_y, reb_w, reb_h, is_hover_reb ? RGB(45, 52, 78) : RGB(30, 32, 48));
+    gfx_drawrect(reb_x, foot_y, reb_w, reb_h, is_hover_reb ? COLOR_ACCENT : COLOR_BORDER);
+    gfx_draw_string(reb_x + 12, foot_y + 7, "Restart", is_hover_reb ? COLOR_WHITE : COLOR_TEXT, COLOR_TRANSPARENT);
+
+    // [ ⏻ Power ] button
+    int sht_x = menu_x + 110;
+    int sht_w = 92;
+    int sht_h = 30;
+    int is_hover_sht = (mx >= sht_x && mx <= sht_x + sht_w && my >= foot_y && my <= foot_y + sht_h);
+    gfx_fillrect(sht_x, foot_y, sht_w, sht_h, is_hover_sht ? RGB(60, 25, 30) : RGB(38, 20, 24));
+    gfx_drawrect(sht_x, foot_y, sht_w, sht_h, is_hover_sht ? COLOR_RED : COLOR_BORDER);
+    gfx_draw_string(sht_x + 12, foot_y + 7, "Power Off", is_hover_sht ? COLOR_WHITE : COLOR_RED, COLOR_TRANSPARENT);
 }
 
 static void handle_desktop_click(int mx, int my) {
@@ -587,13 +675,25 @@ static void handle_desktop_click(int mx, int my) {
         int menu_w = 210;
         int is_inst = sys_is_installed();
         int num_items = 8;
-        int menu_h = 362;
+        int menu_h = 398;
         int menu_y = h - 48 - menu_h - 8;
 
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y && my <= menu_y + menu_h) {
+            int foot_y = menu_y + menu_h - 40;
+            // Check Restart button in Start Menu
+            if (mx >= menu_x + 8 && mx <= menu_x + 100 && my >= foot_y && my <= foot_y + 30) {
+                sys_reboot();
+                return;
+            }
+            // Check Power Off button in Start Menu
+            if (mx >= menu_x + 110 && mx <= menu_x + 202 && my >= foot_y && my <= foot_y + 30) {
+                sys_shutdown();
+                return;
+            }
+
             for (int i = 0; i < num_items; i++) {
-                int item_y = menu_y + 42 + (i * 38);
-                if (my >= item_y && my <= item_y + 32) {
+                int item_y = menu_y + 40 + (i * 36);
+                if (my >= item_y && my <= item_y + 30) {
                     if (!is_inst) {
                         if (i == 0) app_installer_launch();
                         else if (i == 1) app_files_launch();
@@ -861,7 +961,7 @@ static void handle_login_click(int mx, int my) {
     int reb_x = w - 210;
     int reb_y = h - 33;
     if (mx >= reb_x && mx <= reb_x + 90 && my >= reb_y && my <= reb_y + 26) {
-        outb(0x64, 0xFE); // Pulse CPU reset line
+        sys_reboot();
         return;
     }
 
@@ -869,9 +969,7 @@ static void handle_login_click(int mx, int my) {
     int sht_x = w - 105;
     int sht_y = h - 33;
     if (mx >= sht_x && mx <= sht_x + 90 && my >= sht_y && my <= sht_y + 26) {
-        outw(0x604, 0x2000);
-        outw(0xB004, 0x2000);
-        while (1) __asm__ volatile ("cli; hlt");
+        sys_shutdown();
         return;
     }
 }
@@ -969,6 +1067,8 @@ void kernel_main(boot_info_t *bi) {
 
     // Note: Do not automatically open apps on boot (clean desktop, like Ubuntu)
 
+    static int uur_state = 0;
+
     // Main Desktop Event & Render Loop
     while (1) {
         // If system is locked, render and handle Login Screen
@@ -983,7 +1083,21 @@ void kernel_main(boot_info_t *bi) {
                     mouse_move_relative(-18, 0);
                 } else if ((unsigned char)key == KEY_RIGHT) {
                     mouse_move_relative(18, 0);
+                } else if ((unsigned char)key == KEY_HOME) {
+                    mouse_center();
                 } else {
+                    // Check 'u' then 'u' then 'r' reboot sequence on lock screen
+                    if (key == 'u' || key == 'U') {
+                        if (uur_state == 0) uur_state = 1;
+                        else if (uur_state == 1) uur_state = 2;
+                    } else if (key == 'r' || key == 'R') {
+                        if (uur_state == 2) {
+                            sys_reboot();
+                        }
+                        uur_state = 0;
+                    } else {
+                        uur_state = 0;
+                    }
                     handle_login_key(key);
                 }
             }
@@ -1019,6 +1133,36 @@ void kernel_main(boot_info_t *bi) {
             } else if ((unsigned char)key == KEY_RIGHT) {
                 mouse_move_relative(18, 0);
                 continue;
+            } else if ((unsigned char)key == KEY_HOME) {
+                mouse_center();
+                continue;
+            }
+
+            // Windows / Super key: Toggle Start Menu anywhere!
+            if ((unsigned char)key == KEY_SUPER) {
+                start_menu_open = !start_menu_open;
+                continue;
+            }
+
+            // Escape key closes Start Menu if open
+            if (key == 27 && start_menu_open) {
+                start_menu_open = 0;
+                continue;
+            }
+
+            // Global tracking for 'u' then 'u' then 'r' reboot sequence
+            if (key == 'u' || key == 'U') {
+                if (uur_state == 0) uur_state = 1;
+                else if (uur_state == 1) uur_state = 2;
+            } else if (key == 'r' || key == 'R') {
+                if (uur_state == 2) {
+                    sys_reboot();
+                }
+                uur_state = 0;
+            } else if ((unsigned char)key != KEY_UP && (unsigned char)key != KEY_DOWN &&
+                       (unsigned char)key != KEY_LEFT && (unsigned char)key != KEY_RIGHT &&
+                       (unsigned char)key != KEY_HOME && (unsigned char)key != KEY_SUPER) {
+                uur_state = 0;
             }
 
             window_t *act = wm_get_active_window();
@@ -1029,8 +1173,20 @@ void kernel_main(boot_info_t *bi) {
                 if (key == '\r' || key == '\n') {
                     // Enter key triggers click at current cursor location
                     mouse_inject_click(1, 0);
-                } else if (key == 27 || key == ' ') {
+                } else if (key == ' ') {
                     start_menu_open = !start_menu_open;
+                } else if (key == 'w' || key == 'W') {
+                    // WASD mouse movement on desktop
+                    mouse_move_relative(0, -18);
+                } else if (key == 's' || key == 'S') {
+                    mouse_move_relative(0, 18);
+                } else if (key == 'a' || key == 'A') {
+                    mouse_move_relative(-18, 0);
+                } else if (key == 'd' || key == 'D') {
+                    mouse_move_relative(18, 0);
+                } else if (key == 'r' || key == 'R') {
+                    // Direct 'r' key on desktop restarts system
+                    sys_reboot();
                 } else if (!sys_is_installed() && (key == 'i' || key == 'I')) {
                     app_installer_launch();
                 } else if (key == 'f' || key == 'F' || (start_menu_open && key == '1')) {

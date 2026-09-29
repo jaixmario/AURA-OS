@@ -10,6 +10,8 @@
 #define KEY_DOWN      0x81
 #define KEY_LEFT      0x82
 #define KEY_RIGHT     0x83
+#define KEY_SUPER     0x84
+#define KEY_HOME      0x85
 
 void kbd_init(void);
 int  kbd_has_char(void);

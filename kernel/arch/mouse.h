@@ -13,5 +13,6 @@ int  mouse_get_speed(void);
 void mouse_set_bounds(int screen_w, int screen_h);
 void mouse_move_relative(int dx, int dy);
 void mouse_inject_click(int left, int right);
+void mouse_center(void);
 
 #endif

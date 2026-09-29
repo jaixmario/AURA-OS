@@ -711,7 +711,7 @@ static void installer_on_click(window_t *win, int cx, int cy, int btn) {
         // Reboot Now
         if (cx >= content_x + content_w - 140 && cx <= content_x + content_w &&
             cy >= btn_y && cy <= btn_y + 32) {
-            outb(0x64, 0xFE); // Pulse CPU reset line
+            sys_reboot();
             return;
         }
     }
@@ -811,7 +811,7 @@ static void installer_on_key(window_t *win, char key) {
 
     if (current_step == 4) {
         if (key == '\n' || key == '\r' || key == 'r' || key == 'R') {
-            outb(0x64, 0xFE);
+            sys_reboot();
         } else if (key == 'c' || key == 'C') {
             wm_close_window(win);
         }

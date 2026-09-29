@@ -153,14 +153,20 @@ void mouse_init(int screen_w, int screen_h) {
         outb(0x60, status);
     }
 
-    // 4. Send Set Defaults (0xF6) and Enable Data Reporting (0xF4)
+    // 4. Send Reset (0xFF) to reset any 4-byte/absolute mode left by UEFI firmware
+    mouse_write(0xFF);
+    mouse_read(); // ACK (0xFA)
+    mouse_read(); // Self-test passed (0xAA)
+    mouse_read(); // Device ID (0x00)
+
+    // 5. Send Set Defaults (0xF6) and Enable Data Reporting (0xF4)
     mouse_write(0xF6);
     mouse_read(); // Read ACK if sent
 
     mouse_write(0xF4);
     mouse_read(); // Read ACK if sent
 
-    // 5. Flush any leftover response bytes
+    // 6. Flush any leftover response bytes
     for (int i = 0; i < 32; i++) {
         if (inb(0x64) & 1) {
             inb(0x60);
@@ -169,7 +175,7 @@ void mouse_init(int screen_w, int screen_h) {
         }
     }
 
-    // 6. Register handler for IRQ12 (INT 44) and unmask IRQs
+    // 7. Register handler for IRQ12 (INT 44) and unmask IRQs
     register_interrupt_handler(44, mouse_callback);
     pic_unmask_irq(2);
     pic_unmask_irq(12);
@@ -184,13 +190,17 @@ void mouse_move_relative(int dx, int dy) {
     if (mouse_y >= max_y) mouse_y = max_y - 1;
 }
 
+void mouse_center(void) {
+    mouse_x = max_x / 2;
+    mouse_y = max_y / 2;
+}
+
 void mouse_inject_click(int left, int right) {
-    if (left && !btn_left) {
+    if (left) {
         left_clicked = 1;
     }
-    btn_left = left;
-    btn_right = right;
-    prev_btn_left = left;
+    btn_left = 0;
+    btn_right = 0;
 }
 
 int mouse_get_x(void) {
