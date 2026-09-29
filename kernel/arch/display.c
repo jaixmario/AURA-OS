@@ -46,6 +46,14 @@ static unsigned short bga_read(unsigned short index) {
 }
 
 void display_init(void) {
+    boot_info_t *bi = get_boot_info();
+    if (bi && bi->fb_base >= 0x100000) {
+        // Linear framebuffer provided by UEFI GOP on physical hardware.
+        // Never touch legacy Bochs/QEMU ISA I/O ports on bare metal!
+        g_bga_detected = 0;
+        return;
+    }
+
     unsigned short id = bga_read(VBE_DISPI_INDEX_ID);
     if (id >= 0xB0C0 && id <= 0xB0C6) {
         g_bga_detected = 1;

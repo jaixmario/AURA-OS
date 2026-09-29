@@ -326,16 +326,18 @@ static void load_system_settings(void) {
         mouse_set_speed(saved_spd);
     }
 
-    // 3. Restore Saved Display Resolution or Auto-Detect
-    int auto_detect = sys_get_setting_int("RES_AUTO", 0);
-    if (auto_detect) {
-        display_auto_detect();
-    } else {
-        int saved_w = sys_get_setting_int("RES_WIDTH", -1);
-        int saved_h = sys_get_setting_int("RES_HEIGHT", -1);
-        if (saved_w >= 640 && saved_h >= 480) {
-            if (saved_w != gfx_get_width() || saved_h != gfx_get_height()) {
-                display_set_resolution(saved_w, saved_h);
+    // 3. Restore Saved Display Resolution or Auto-Detect (only on emulators with BGA support)
+    if (display_is_bga_supported()) {
+        int auto_detect = sys_get_setting_int("RES_AUTO", 0);
+        if (auto_detect) {
+            display_auto_detect();
+        } else {
+            int saved_w = sys_get_setting_int("RES_WIDTH", -1);
+            int saved_h = sys_get_setting_int("RES_HEIGHT", -1);
+            if (saved_w >= 640 && saved_h >= 480) {
+                if (saved_w != gfx_get_width() || saved_h != gfx_get_height()) {
+                    display_set_resolution(saved_w, saved_h);
+                }
             }
         }
     }
@@ -1046,13 +1048,7 @@ void kernel_main(boot_info_t *bi) {
     vfs_init();
     load_user_profile();
 
-    gfx_draw_string(cx, cy + 105, "[5/6] Enabling CPU Interrupts", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
-    gfx_swap_buffers();
-
-    // Enable CPU interrupts!
-    __asm__ volatile ("sti");
-
-    gfx_draw_string(cx, cy + 125, "[6/6] Launching Graphical Desktop...", COLOR_GREEN, COLOR_TRANSPARENT);
+    gfx_draw_string(cx, cy + 105, "[5/6] Desktop Engine & Settings", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     gfx_swap_buffers();
 
     // 5. Initialize Display Driver & Wallpaper Engine
@@ -1065,7 +1061,11 @@ void kernel_main(boot_info_t *bi) {
     // 6. Initialize Window Manager
     wm_init();
 
-    // Note: Do not automatically open apps on boot (clean desktop, like Ubuntu)
+    gfx_draw_string(cx, cy + 125, "[6/6] Launching Graphical Desktop...", COLOR_GREEN, COLOR_TRANSPARENT);
+    gfx_swap_buffers();
+
+    // Enable CPU interrupts right as the graphical desktop loop begins!
+    __asm__ volatile ("sti");
 
     static int uur_state = 0;
 

@@ -4,16 +4,13 @@
 #include "gfx.h"
 #include "../libc/string.h"
 
-// Dedicated safe buffers in extended memory:
-// 0x00C00000 (12MB mark): Active screen-resolution wallpaper buffer (up to 1920x1080x4 = 8.3MB, ends at ~20.3MB)
-// 0x01500000 (21MB mark): Temporary 1024x768 decoded source buffer (3.1MB, ends at ~24.1MB)
-static unsigned int *g_wallpaper_buf = (unsigned int *)0x00C00000;
-static unsigned int *g_raw_1024      = (unsigned int *)0x01500000;
+// Dedicated safe buffer in low extended memory:
+// 0x00A00000 (10MB mark): 1024x768 decoded wallpaper source (3.14MB, ends at 13.14MB)
+// This is strictly below the legacy 15MB-16MB memory hole and avoids all high-memory reserved regions.
+static unsigned int *g_raw_1024 = (unsigned int *)0x00A00000;
 
 static int g_current_wallpaper = 0;
 static int g_loaded_wallpaper = -1;
-static int g_loaded_w = 0;
-static int g_loaded_h = 0;
 
 typedef struct {
     const unsigned char *data;
@@ -34,14 +31,11 @@ static unsigned char pjpeg_need_bytes(unsigned char *pBuf, unsigned char buf_siz
 }
 
 static void wallpaper_decode_current(void) {
-    int screen_w = gfx_get_width();
-    int screen_h = gfx_get_height();
-
     if (g_current_wallpaper < 0 || g_current_wallpaper >= WALLPAPER_COUNT) {
         g_current_wallpaper = 0;
     }
 
-    if (g_loaded_wallpaper == g_current_wallpaper && g_loaded_w == screen_w && g_loaded_h == screen_h) {
+    if (g_loaded_wallpaper == g_current_wallpaper) {
         return;
     }
 
@@ -51,13 +45,10 @@ static void wallpaper_decode_current(void) {
     unsigned char status = pjpeg_decode_init(&info, pjpeg_need_bytes, &stream, 0);
     if (status != 0) {
         // Fallback: solid color
-        int total = screen_w * screen_h;
-        for (int i = 0; i < total; i++) {
-            g_wallpaper_buf[i] = RGB(24, 25, 38);
+        for (int i = 0; i < 1024 * 768; i++) {
+            g_raw_1024[i] = RGB(24, 25, 38);
         }
         g_loaded_wallpaper = g_current_wallpaper;
-        g_loaded_w = screen_w;
-        g_loaded_h = screen_h;
         return;
     }
 
@@ -136,45 +127,15 @@ static void wallpaper_decode_current(void) {
         }
     }
 
-    // Scale from g_raw_1024 (1024x768) to screen resolution (screen_w x screen_h)
-    if (screen_w == 1024 && screen_h == 768) {
-        int total = 1024 * 768;
-        unsigned int *dst = g_wallpaper_buf;
-        const unsigned int *src = g_raw_1024;
-        __asm__ volatile (
-            "cld\n"
-            "rep movsl\n"
-            : "+D"(dst), "+S"(src), "+c"(total)
-            :
-            : "memory"
-        );
-    } else {
-        for (int y = 0; y < screen_h; y++) {
-            int src_y = (y * 768) / screen_h;
-            unsigned int *dst_row = g_wallpaper_buf + (y * screen_w);
-            const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
-            for (int x = 0; x < screen_w; x++) {
-                int src_x = (x * 1024) / screen_w;
-                dst_row[x] = src_row[src_x];
-            }
-        }
-    }
-
     g_loaded_wallpaper = g_current_wallpaper;
-    g_loaded_w = screen_w;
-    g_loaded_h = screen_h;
 }
 
 void wallpaper_init(void) {
     g_loaded_wallpaper = -1;
-    g_loaded_w = 0;
-    g_loaded_h = 0;
 }
 
 void wallpaper_invalidate(void) {
     g_loaded_wallpaper = -1;
-    g_loaded_w = 0;
-    g_loaded_h = 0;
 }
 
 int wallpaper_get_count(void) {
@@ -210,36 +171,54 @@ void wallpaper_draw_desktop(void) {
     int screen_w = gfx_get_width();
     int screen_h = gfx_get_height();
 
-    if (g_loaded_wallpaper != g_current_wallpaper || g_loaded_w != screen_w || g_loaded_h != screen_h) {
+    if (g_loaded_wallpaper != g_current_wallpaper) {
         wallpaper_decode_current();
     }
+
     unsigned int *dst = gfx_get_backbuffer();
-    const unsigned int *src = g_wallpaper_buf;
-    int count = screen_w * screen_h;
-    __asm__ volatile (
-        "cld\n"
-        "rep movsl\n"
-        : "+S"(src), "+D"(dst), "+c"(count)
-        :
-        : "memory"
-    );
+    if (screen_w == 1024 && screen_h == 768) {
+        int total = 1024 * 768;
+        const unsigned int *src = g_raw_1024;
+        __asm__ volatile (
+            "cld\n"
+            "rep movsl\n"
+            : "+D"(dst), "+S"(src), "+c"(total)
+            :
+            : "memory"
+        );
+    } else {
+        for (int y = 0; y < screen_h; y++) {
+            int src_y = (y * 768) / screen_h;
+            unsigned int *dst_row = dst + (y * screen_w);
+            const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
+            for (int x = 0; x < screen_w; x++) {
+                int src_x = (x * 1024) / screen_w;
+                dst_row[x] = src_row[src_x];
+            }
+        }
+    }
 }
 
 void wallpaper_draw_tinted(void) {
     int screen_w = gfx_get_width();
     int screen_h = gfx_get_height();
 
-    if (g_loaded_wallpaper != g_current_wallpaper || g_loaded_w != screen_w || g_loaded_h != screen_h) {
+    if (g_loaded_wallpaper != g_current_wallpaper) {
         wallpaper_decode_current();
     }
+
     unsigned int *dst = gfx_get_backbuffer();
-    const unsigned int *src = g_wallpaper_buf;
-    int count = screen_w * screen_h;
-    for (int i = 0; i < count; i++) {
-        unsigned int c = src[i];
-        unsigned int r = ((c >> 16) & 0xFF) * 40 / 100;
-        unsigned int g = ((c >> 8) & 0xFF) * 40 / 100;
-        unsigned int b = (c & 0xFF) * 50 / 100;
-        dst[i] = (r << 16) | (g << 8) | b;
+    for (int y = 0; y < screen_h; y++) {
+        int src_y = (y * 768) / screen_h;
+        unsigned int *dst_row = dst + (y * screen_w);
+        const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
+        for (int x = 0; x < screen_w; x++) {
+            int src_x = (x * 1024) / screen_w;
+            unsigned int c = src_row[src_x];
+            unsigned int r = ((c >> 16) & 0xFF) * 40 / 100;
+            unsigned int g = ((c >> 8) & 0xFF) * 40 / 100;
+            unsigned int b = (c & 0xFF) * 50 / 100;
+            dst_row[x] = (r << 16) | (g << 8) | b;
+        }
     }
 }
