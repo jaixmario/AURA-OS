@@ -908,9 +908,11 @@ void kernel_main(boot_info_t *bi) {
     // 0. Initialize Graphics Subsystem IMMEDIATELY so the display is lit & active
     gfx_init(bi);
     gfx_clear(RGB(24, 25, 38));
-    if (bi->width >= 300 && bi->height >= 100) {
-        gfx_draw_string(bi->width / 2 - 64, bi->height / 2 - 8, "Starting AuraOS...", COLOR_WHITE, COLOR_TRANSPARENT);
-    }
+    int cx = (bi->width > 300) ? (bi->width / 2 - 130) : 20;
+    int cy = (bi->height > 200) ? (bi->height / 2 - 80) : 20;
+
+    gfx_draw_string(cx, cy,      "AuraOS Starting...", COLOR_WHITE, COLOR_TRANSPARENT);
+    gfx_draw_string(cx, cy + 25, "[1/6] Core IDT & Exceptions", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
     gfx_swap_buffers();
 
     // Detect Boot Mode: Live CD / ISO vs Installed Hard Disk
@@ -925,35 +927,44 @@ void kernel_main(boot_info_t *bi) {
     // 1. Initialize core architecture & interrupt descriptors
     idt_init();
 
-    // 2. Initialize PIT timer (100 Hz = 10ms per tick)
+    gfx_draw_string(cx, cy + 45, "[2/6] PIT Timer & System Clock", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_swap_buffers();
+
+    // 2. Initialize PIT timer (100 Hz = 10ms per tick) & CMOS RTC
     pit_init(100);
-
-    // 3. Initialize PS/2 Keyboard
-    kbd_init();
-
-    // 4. Initialize PS/2 Mouse
-    mouse_init(bi->width, bi->height);
-
-    // 5. Initialize Hardware CMOS Real-Time Clock
     rtc_init();
 
-    // 6. Initialize Virtual File System
-    vfs_init();
+    gfx_draw_string(cx, cy + 65, "[3/6] Keyboard & Touchpad Input", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_swap_buffers();
 
-    // Load installed user profile (if present on disk)
+    // 3. Initialize PS/2 Keyboard & Mouse (safely probes & keeps IRQ12 masked if no PS/2 mouse)
+    kbd_init();
+    mouse_init(bi->width, bi->height);
+
+    gfx_draw_string(cx, cy + 85, "[4/6] File System & Profile", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_swap_buffers();
+
+    // 4. Initialize Virtual File System
+    vfs_init();
     load_user_profile();
+
+    gfx_draw_string(cx, cy + 105, "[5/6] Enabling CPU Interrupts", COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    gfx_swap_buffers();
 
     // Enable CPU interrupts!
     __asm__ volatile ("sti");
 
-    // 7. Initialize Display Driver & Wallpaper Engine
+    gfx_draw_string(cx, cy + 125, "[6/6] Launching Graphical Desktop...", COLOR_GREEN, COLOR_TRANSPARENT);
+    gfx_swap_buffers();
+
+    // 5. Initialize Display Driver & Wallpaper Engine
     display_init();
     wallpaper_init();
 
     // Load persistent system settings (saved wallpaper, mouse speed, etc.)
     load_system_settings();
 
-    // 8. Initialize Window Manager
+    // 6. Initialize Window Manager
     wm_init();
 
     // Note: Do not automatically open apps on boot (clean desktop, like Ubuntu)

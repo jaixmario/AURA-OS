@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "../libc/string.h"
+#include "../gfx/gfx.h"
 
 static idt_entry_t idt_entries[256];
 static idt_ptr_t   idt_ptr;
@@ -20,7 +21,59 @@ void register_interrupt_handler(unsigned char n, isr_handler_t handler) {
     interrupt_handlers[n] = handler;
 }
 
+static const char * const exception_names[32] = {
+    "Divide-by-zero (#DE)", "Debug (#DB)", "NMI Interrupt", "Breakpoint (#BP)",
+    "Overflow (#OF)", "BOUND Range (#BR)", "Invalid Opcode (#UD)", "Device Not Available (#NM)",
+    "Double Fault (#DF)", "Coprocessor Segment Overrun", "Invalid TSS (#TS)", "Segment Not Present (#NP)",
+    "Stack Fault (#SS)", "General Protection Fault (#GP)", "Page Fault (#PF)", "Reserved",
+    "x87 FPU Error (#MF)", "Alignment Check (#AC)", "Machine Check (#MC)", "SIMD Exception (#XM)",
+    "Virtualization Exception", "Control Protection", "Reserved", "Reserved",
+    "Reserved", "Reserved", "Reserved", "Reserved",
+    "Hypervisor Injection", "VMM Communication", "Security Exception", "Reserved"
+};
+
 void isr_handler(registers_t *regs) {
+    if (regs->int_no < 32) {
+        // Unhandled CPU Exception / Panic!
+        __asm__ volatile ("cli");
+
+        unsigned int cr2 = 0;
+        if (regs->int_no == 14) {
+            __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+        }
+
+        // Draw Panic Dialog Box on Framebuffer
+        gfx_fillrect(40, 40, 680, 240, RGB(180, 20, 30));
+        gfx_drawrect(40, 40, 680, 240, COLOR_WHITE);
+        gfx_draw_string(60, 55, "=== AURA OS KERNEL PANIC ===", COLOR_WHITE, COLOR_TRANSPARENT);
+
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Exception %d: %s", regs->int_no,
+                 (regs->int_no < 32) ? exception_names[regs->int_no] : "Unknown");
+        gfx_draw_string(60, 85, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+
+        snprintf(buf, sizeof(buf), "EIP: 0x%08X   CS: 0x%04X   EFLAGS: 0x%08X", regs->eip, regs->cs, regs->eflags);
+        gfx_draw_string(60, 115, buf, COLOR_YELLOW, COLOR_TRANSPARENT);
+
+        snprintf(buf, sizeof(buf), "Error Code: 0x%08X   CR2 (Faulting Addr): 0x%08X", regs->err_code, cr2);
+        gfx_draw_string(60, 145, buf, COLOR_YELLOW, COLOR_TRANSPARENT);
+
+        snprintf(buf, sizeof(buf), "EAX: 0x%08X  EBX: 0x%08X  ECX: 0x%08X  EDX: 0x%08X",
+                 regs->eax, regs->ebx, regs->ecx, regs->edx);
+        gfx_draw_string(60, 175, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+
+        snprintf(buf, sizeof(buf), "ESP: 0x%08X  EBP: 0x%08X  ESI: 0x%08X  EDI: 0x%08X",
+                 regs->esp, regs->ebp, regs->esi, regs->edi);
+        gfx_draw_string(60, 200, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+
+        gfx_draw_string(60, 230, "System halted. Please take a photo of this screen.", RGB(220, 230, 255), COLOR_TRANSPARENT);
+
+        gfx_swap_buffers();
+        while (1) {
+            __asm__ volatile ("cli; hlt");
+        }
+    }
+
     if (interrupt_handlers[regs->int_no] != 0) {
         isr_handler_t handler = interrupt_handlers[regs->int_no];
         handler(regs);

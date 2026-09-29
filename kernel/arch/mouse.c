@@ -48,24 +48,30 @@ static unsigned char mouse_read(void) {
 static void mouse_callback(registers_t *regs) {
     (void)regs;
     unsigned char status = inb(0x64);
-    if (!(status & 0x20)) {
-        // Not mouse data
-        return;
+    if (!(status & 0x01)) {
+        return; // No data available
     }
 
-    signed char b = (signed char)inb(0x60);
+    // Always read port 0x60 to clear 8042 controller output buffer and de-assert IRQ!
+    // Returning without reading port 0x60 causes an infinite interrupt storm on hardware.
+    unsigned char b = inb(0x60);
+
+    if (!(status & 0x20)) {
+        // Not auxiliary mouse data
+        return;
+    }
 
     if (mouse_cycle == 0) {
         // First byte must have bit 3 set (sync bit)
         if (b & 0x08) {
-            mouse_bytes[0] = b;
+            mouse_bytes[0] = (signed char)b;
             mouse_cycle++;
         }
     } else if (mouse_cycle == 1) {
-        mouse_bytes[1] = b;
+        mouse_bytes[1] = (signed char)b;
         mouse_cycle++;
     } else if (mouse_cycle == 2) {
-        mouse_bytes[2] = b;
+        mouse_bytes[2] = (signed char)b;
         mouse_cycle = 0;
 
         // Decode packet
@@ -90,7 +96,7 @@ static void mouse_callback(registers_t *regs) {
                 dy = (dy * 3) / 2;
                 if (abs_dx > 4) dx += (dx > 0) ? (abs_dx - 4) : -(abs_dx - 4);
                 if (abs_dy > 4) dy += (dy > 0) ? (abs_dy - 4) : -(abs_dy - 4);
-            } // level 0 is 1x (slow precision)
+            }
 
             mouse_x += dx;
             mouse_y -= dy; // Invert Y because mouse coords go down-up, screen coords up-down
@@ -118,46 +124,64 @@ void mouse_init(int screen_w, int screen_h) {
     mouse_x = screen_w / 2;
     mouse_y = screen_h / 2;
 
-    // Enable auxiliary mouse device
+    // 1. Drain any residual bytes in 8042 controller buffer
+    for (int i = 0; i < 32; i++) {
+        if (inb(0x64) & 1) {
+            inb(0x60);
+        } else {
+            break;
+        }
+    }
+
+    // 2. Enable auxiliary mouse interface on 8042
     mouse_wait_write();
     outb(0x64, 0xA8);
 
-    // Enable interrupts for mouse (IRQ12)
+    // 3. Read 8042 command byte
     mouse_wait_write();
-    outb(0x64, 0x20); // Get compo byte
+    outb(0x64, 0x20);
     mouse_wait_read();
-    unsigned char status = inb(0x60) | 2; // Enable IRQ12
-    mouse_wait_write();
-    outb(0x64, 0x60); // Set compo byte
-    mouse_wait_write();
-    outb(0x60, status);
+    unsigned char status = inb(0x60);
+    if (status != 0xFF) {
+        status |= 2;      // Enable IRQ12
+        status &= ~0x20;  // Enable mouse clock line
+        mouse_wait_write();
+        outb(0x64, 0x60);
+        mouse_wait_write();
+        outb(0x60, status);
+    }
 
-    // Set default settings
-    mouse_write(0xF6);
-    mouse_read(); // ACK (0xFA)
+    // 4. Reset & test auxiliary device presence
+    mouse_write(0xF6); // Set defaults
+    unsigned char ack = mouse_read();
+    int mouse_present = (ack == 0xFA);
 
-    // Set sample rate to 200 Hz (ultra-smooth)
-    mouse_write(0xF3);
-    mouse_read(); // ACK
-    mouse_write(200);
-    mouse_read(); // ACK
+    if (mouse_present) {
+        // Set sample rate to 200 Hz
+        mouse_write(0xF3);
+        mouse_read();
+        mouse_write(200);
+        mouse_read();
 
-    // Set resolution to 8 counts/mm
-    mouse_write(0xE8);
-    mouse_read(); // ACK
-    mouse_write(0x03);
-    mouse_read(); // ACK
+        // Set resolution
+        mouse_write(0xE8);
+        mouse_read();
+        mouse_write(0x03);
+        mouse_read();
 
-    // Enable data reporting
-    mouse_write(0xF4);
-    mouse_read(); // ACK (0xFA)
+        // Enable data reporting
+        mouse_write(0xF4);
+        mouse_read();
 
-    // Register handler for IRQ12 (INT 44)
-    register_interrupt_handler(44, mouse_callback);
-
-    // Unmask IRQ2 (cascade) and IRQ12 (mouse)
-    pic_unmask_irq(2);
-    pic_unmask_irq(12);
+        // Register handler and unmask IRQ12 on PIC
+        register_interrupt_handler(44, mouse_callback);
+        pic_unmask_irq(2);
+        pic_unmask_irq(12);
+    } else {
+        // No PS/2 mouse detected (modern laptops with I2C/HID touchpad e.g. Acer Aspire Lite)
+        // Keep IRQ12 masked to prevent unhandled interrupt storms!
+        pic_mask_irq(12);
+    }
 }
 
 int mouse_get_x(void) {

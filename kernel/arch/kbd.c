@@ -35,7 +35,14 @@ static const char kbd_scancode_shift[128] = {
 
 static void kbd_callback(registers_t *regs) {
     (void)regs;
+    unsigned char status = inb(0x64);
+    if (!(status & 0x01)) {
+        return;
+    }
     unsigned char scancode = inb(0x60);
+    if (status & 0x20) {
+        return; // Mouse data arrived on keyboard port, ignore
+    }
     last_scancode = scancode;
 
     // Shift press/release
