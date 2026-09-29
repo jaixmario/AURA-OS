@@ -49,11 +49,22 @@ unpaged_mode:
     btr eax, 8                  ; Clear LME
     wrmsr
 
-    ; Disable PAE
+    ; Load CR3 with our 32-bit PAE PDPT at physical 0x8000
+    mov eax, 0x8000
+    mov cr3, eax
+
+    ; Enable PAE in CR4 (bit 5)
     mov eax, cr4
-    btr eax, 5
+    bts eax, 5                  ; Set PAE
     mov cr4, eax
 
+    ; Enable Paging in CR0 (bit 31) -> enters 32-bit Protected Mode with PAE!
+    mov eax, cr0
+    bts eax, 31                 ; Set PG
+    mov cr0, eax
+    jmp pae_paged_64
+
+pae_paged_64:
     ; Reload GDT in pure 32-bit protected mode
     lgdt [gdt_descriptor_32]
     mov ax, 0x10
@@ -89,11 +100,22 @@ entry32:
     jmp unpaged_32
 
 unpaged_32:
-    ; Disable PAE
+    ; Load CR3 with our 32-bit PAE PDPT at physical 0x8000
+    mov eax, 0x8000
+    mov cr3, eax
+
+    ; Enable PAE in CR4
     mov eax, cr4
-    btr eax, 5
+    bts eax, 5
     mov cr4, eax
 
+    ; Enable Paging in CR0
+    mov eax, cr0
+    bts eax, 31
+    mov cr0, eax
+    jmp pae_paged_32
+
+pae_paged_32:
     lgdt [gdt_descriptor_32]
     mov ax, 0x10
     mov ds, ax

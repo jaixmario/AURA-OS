@@ -33,6 +33,59 @@ static void *memset(void *s, int c, UINTN n) {
     return s;
 }
 
+#define PAE_PDPT_ADDR  0x8000ULL
+#define PAE_PD0_ADDR   0x9000ULL
+#define PAE_PD1_ADDR   0xA000ULL
+#define PAE_PD2_ADDR   0xB000ULL
+#define PAE_PD3_ADDR   0xC000ULL
+
+static UINT32 setup_pae_paging(UINT64 fb_base, UINT32 fb_size) {
+    UINT64 *pdpt = (UINT64 *)PAE_PDPT_ADDR;
+    UINT64 *pd0  = (UINT64 *)PAE_PD0_ADDR;
+    UINT64 *pd1  = (UINT64 *)PAE_PD1_ADDR;
+    UINT64 *pd2  = (UINT64 *)PAE_PD2_ADDR;
+    UINT64 *pd3  = (UINT64 *)PAE_PD3_ADDR;
+
+    memset(pdpt, 0, 4096);
+    memset(pd0, 0, 4096);
+    memset(pd1, 0, 4096);
+    memset(pd2, 0, 4096);
+    memset(pd3, 0, 4096);
+
+    // 1. Link PDPT to the 4 Page Directories
+    pdpt[0] = PAE_PD0_ADDR | 0x01; // Present
+    pdpt[1] = PAE_PD1_ADDR | 0x01;
+    pdpt[2] = PAE_PD2_ADDR | 0x01;
+    pdpt[3] = PAE_PD3_ADDR | 0x01;
+
+    // 2. Identity-map 0 to 4 GB with 2 MB large pages
+    for (UINT32 i = 0; i < 512; i++) {
+        pd0[i] = ((UINT64)i * 0x200000ULL) | 0x83;
+        pd1[i] = (((UINT64)i + 512) * 0x200000ULL) | 0x83;
+        pd2[i] = (((UINT64)i + 1024) * 0x200000ULL) | 0x83;
+        pd3[i] = (((UINT64)i + 1536) * 0x200000ULL) | 0x83;
+    }
+
+    // 3. If fb_base is below 4GB, identity mapping in pd0..pd3 already covers it
+    if (fb_base < 0x100000000ULL) {
+        return (UINT32)fb_base;
+    }
+
+    // 4. fb_base is >= 4GB (Above 4G Decoding / AMD Ryzen 64-bit BAR):
+    // Map it to 32-bit virtual window 0xE0000000 (3.5 GB mark, index 256 in PD3)
+    UINT64 page_offset = fb_base & 0x1FFFFFULL;
+    UINT64 page_base   = fb_base & ~0x1FFFFFULL;
+    UINT32 num_pages   = (fb_size + (UINT32)page_offset + 0x1FFFFF) / 0x200000;
+    if (num_pages < 1) num_pages = 1;
+    if (num_pages > 64) num_pages = 64; // up to 128 MB aperture
+
+    for (UINT32 p = 0; p < num_pages; p++) {
+        pd3[256 + p] = (page_base + ((UINT64)p * 0x200000ULL)) | 0x8B; // Present, RW, PWT, 2MB
+    }
+
+    return 0xE0000000 + (UINT32)page_offset;
+}
+
 EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     EFI_STATUS status;
 
@@ -40,10 +93,9 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         SystemTable->ConOut->OutputString(SystemTable->ConOut, L"AuraOS UEFI Bootloader starting...\r\n");
     }
 
-    // 1. Allocate fixed physical pages for Trampoline (0x6000) and Kernel (0x10000)
-    // to prevent UEFI from using these regions for page tables or runtime buffers
+    // 1. Allocate fixed physical pages for Trampoline (0x6000..0xCFFF, 7 pages) and Kernel (0x10000, 128 pages)
     EFI_PHYSICAL_ADDRESS addr_tramp = 0x6000;
-    SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 2, &addr_tramp);
+    SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 7, &addr_tramp);
 
     EFI_PHYSICAL_ADDRESS addr_kernel = 0x10000;
     SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 128, &addr_kernel);
@@ -59,16 +111,12 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     UINT64 fb_base = 0;
 
     if (status == EFI_SUCCESS && gop != NULL && gop->Mode != NULL) {
-        // On modern laptops (e.g. Acer Aspire Lite AL15-41 with 1080p eDP panel),
-        // the UEFI firmware already initializes GOP to the panel's native mode.
-        // Forcing SetMode away from native often blanks the screen or turns off the panel.
         if (gop->Mode->Info && gop->Mode->Info->HorizontalResolution >= 800) {
             best_w = gop->Mode->Info->HorizontalResolution;
             best_h = gop->Mode->Info->VerticalResolution;
             best_pitch = (gop->Mode->Info->PixelsPerScanLine > 0) ? (gop->Mode->Info->PixelsPerScanLine * 4) : (best_w * 4);
             fb_base = gop->Mode->FrameBufferBase;
         } else {
-            // Search for preferred 1024x768 resolution if current mode is missing or low-res (e.g. QEMU)
             UINT32 chosen_mode = gop->Mode->Mode;
             for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
                 EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = NULL;
@@ -97,16 +145,19 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         }
     }
 
+    UINT32 fb_size = best_pitch * best_h;
+    UINT32 mapped_fb = setup_pae_paging(fb_base, fb_size);
+
     if (fb_base >= 0x100000000ULL && SystemTable && SystemTable->ConOut) {
         SystemTable->ConOut->OutputString(SystemTable->ConOut,
-            L"[!] Warning: GOP FrameBuffer is above 4GB. If blackscreen occurs, disable 'Above 4G Decoding' in BIOS.\r\n");
+            L"[+] 64-bit Framebuffer mapped to 0xE0000000 via 32-bit PAE MMU!\r\n");
     }
 
     // 3. Populate boot_info_t structure at physical address 0x7000
     boot_info_t *bi = (boot_info_t *)0x7000;
     memset(bi, 0, sizeof(boot_info_t));
     bi->magic = 0x41555241; // 'AURA'
-    bi->fb_base = (unsigned int)fb_base;
+    bi->fb_base = mapped_fb;
     bi->width = (unsigned short)best_w;
     bi->height = (unsigned short)best_h;
     bi->pitch = (unsigned short)best_pitch;
