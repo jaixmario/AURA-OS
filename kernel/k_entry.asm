@@ -159,3 +159,24 @@ irq_common_stub:
     popa
     add esp, 8
     iret
+
+global isr_default
+isr_default:
+    pusha
+    push ds
+
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; Send EOI to PIC in case of spurious or unhandled PIC IRQ
+    mov al, 0x20
+    out 0x20, al
+    out 0xA0, al
+
+    pop ds
+    popa
+    iret
+

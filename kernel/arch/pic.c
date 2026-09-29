@@ -8,9 +8,43 @@ void pic_send_eoi(unsigned char irq) {
     outb(PIC1_COMMAND, PIC_EOI);
 }
 
+static void apic_disable_or_mask(void) {
+    // Check CPUID for APIC support (EDX bit 9 of CPUID leaf 1)
+    unsigned int eax, ebx, ecx, edx;
+    __asm__ volatile ("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(1));
+    if (!(edx & (1 << 9))) {
+        return; // No APIC on CPU
+    }
+
+    // Read IA32_APIC_BASE MSR (0x1B)
+    unsigned int lo, hi;
+    __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0x1B));
+    if (!(lo & (1 << 11))) {
+        return; // APIC is not enabled
+    }
+
+    unsigned int apic_base = lo & 0xFFFFF000;
+    if (apic_base == 0) apic_base = 0xFEE00000;
+
+    volatile unsigned int *apic = (volatile unsigned int *)apic_base;
+    // Mask all Local APIC LVT interrupt lines (bit 16 = 0x10000)
+    apic[0x320 / 4] |= 0x10000; // Timer
+    apic[0x330 / 4] |= 0x10000; // Thermal
+    apic[0x340 / 4] |= 0x10000; // Performance Counter
+    apic[0x350 / 4] |= 0x10000; // LINT0
+    apic[0x360 / 4] |= 0x10000; // LINT1
+    apic[0x370 / 4] |= 0x10000; // Error
+    apic[0x0B0 / 4] = 0;        // EOI
+}
+
 void pic_init(void) {
+    // 1. Mask and silence any active Local APIC interrupts left by UEFI firmware
+    apic_disable_or_mask();
+
     unsigned char a1 = inb(PIC1_DATA);
     unsigned char a2 = inb(PIC2_DATA);
+    (void)a1;
+    (void)a2;
 
     // ICW1: Start initialization in cascade mode
     outb(PIC1_COMMAND, 0x11);

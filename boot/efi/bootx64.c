@@ -93,12 +93,12 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         SystemTable->ConOut->OutputString(SystemTable->ConOut, L"AuraOS UEFI Bootloader starting...\r\n");
     }
 
-    // 1. Allocate fixed physical pages for Trampoline (0x6000..0xCFFF, 7 pages) and Kernel (0x10000, 128 pages)
+    // 1. Allocate fixed physical pages for Trampoline (0x6000..0xCFFF, 7 pages) and Kernel (0x10000, 256 pages = 1MB)
     EFI_PHYSICAL_ADDRESS addr_tramp = 0x6000;
     SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 7, &addr_tramp);
 
     EFI_PHYSICAL_ADDRESS addr_kernel = 0x10000;
-    SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 128, &addr_kernel);
+    SystemTable->BootServices->AllocatePages(AllocateAddress, EfiLoaderData, 256, &addr_kernel);
 
     // 2. Locate Graphics Output Protocol (GOP)
     EFI_GUID gop_guid = { 0x9042a9de, 0x23dc, 0x4a38, { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } };

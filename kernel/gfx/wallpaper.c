@@ -132,6 +132,26 @@ static void wallpaper_decode_current(void) {
 
 void wallpaper_init(void) {
     g_loaded_wallpaper = -1;
+    // Pre-initialize g_raw_1024 with a smooth deep twilight gradient
+    for (int y = 0; y < 768; y++) {
+        int r, g, b;
+        if (y < 384) {
+            r = 18 + (35 - 18) * y / 384;
+            g = 24 + (55 - 24) * y / 384;
+            b = 40 + (85 - 40) * y / 384;
+        } else {
+            int dy = y - 384;
+            r = 35 + (20 - 35) * dy / 384;
+            g = 55 + (26 - 55) * dy / 384;
+            b = 85 + (42 - 85) * dy / 384;
+        }
+        unsigned int col = (r << 16) | (g << 8) | b;
+        for (int x = 0; x < 1024; x++) {
+            g_raw_1024[y * 1024 + x] = col;
+        }
+    }
+    // Pre-decode default wallpaper during initialization so desktop opens instantly
+    wallpaper_decode_current();
 }
 
 void wallpaper_invalidate(void) {

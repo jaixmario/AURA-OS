@@ -1064,7 +1064,28 @@ void kernel_main(boot_info_t *bi) {
     gfx_draw_string(cx, cy + 125, "[6/6] Launching Graphical Desktop...", COLOR_GREEN, COLOR_TRANSPARENT);
     gfx_swap_buffers();
 
-    // Enable CPU interrupts right as the graphical desktop loop begins!
+    // Pre-render the initial desktop frame so the transition from boot splash to desktop is instantaneous
+    int init_mx = mouse_get_x();
+    int init_my = mouse_get_y();
+    if (!g_logged_in) {
+        draw_login_screen();
+        gfx_draw_cursor(init_mx, init_my);
+    } else {
+        draw_wallpaper();
+        draw_desktop_icons();
+        wm_render();
+        draw_taskbar();
+        draw_start_menu();
+        gfx_draw_cursor(init_mx, init_my);
+    }
+    gfx_swap_buffers();
+
+    // Drain any residual scancodes from firmware / boot selection before activating input loop
+    while (kbd_has_char()) {
+        kbd_get_char();
+    }
+
+    // Enable CPU interrupts now that desktop is fully rendered and active!
     __asm__ volatile ("sti");
 
     static int uur_state = 0;
@@ -1184,9 +1205,6 @@ void kernel_main(boot_info_t *bi) {
                     mouse_move_relative(-18, 0);
                 } else if (key == 'd' || key == 'D') {
                     mouse_move_relative(18, 0);
-                } else if (key == 'r' || key == 'R') {
-                    // Direct 'r' key on desktop restarts system
-                    sys_reboot();
                 } else if (!sys_is_installed() && (key == 'i' || key == 'I')) {
                     app_installer_launch();
                 } else if (key == 'f' || key == 'F' || (start_menu_open && key == '1')) {

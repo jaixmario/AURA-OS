@@ -103,6 +103,7 @@ extern void irq0(); extern void irq1(); extern void irq2(); extern void irq3();
 extern void irq4(); extern void irq5(); extern void irq6(); extern void irq7();
 extern void irq8(); extern void irq9(); extern void irq10(); extern void irq11();
 extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15();
+extern void isr_default();
 
 void idt_init(void) {
     idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
@@ -114,7 +115,12 @@ void idt_init(void) {
     // Initialize PIC
     pic_init();
 
-    // ISRs
+    // Set all 256 IDT gates to default stub first (guarantees no unhandled interrupts cause #GP or triple faults)
+    for (int i = 0; i < 256; i++) {
+        idt_set_gate(i, (unsigned int)isr_default, 0x08, 0x8E);
+    }
+
+    // CPU Exceptions (0..31)
     idt_set_gate(0,  (unsigned int)isr0,  0x08, 0x8E);
     idt_set_gate(1,  (unsigned int)isr1,  0x08, 0x8E);
     idt_set_gate(2,  (unsigned int)isr2,  0x08, 0x8E);
@@ -148,7 +154,7 @@ void idt_init(void) {
     idt_set_gate(30, (unsigned int)isr30, 0x08, 0x8E);
     idt_set_gate(31, (unsigned int)isr31, 0x08, 0x8E);
 
-    // IRQs
+    // PIC IRQs (32..47)
     idt_set_gate(32, (unsigned int)irq0,  0x08, 0x8E);
     idt_set_gate(33, (unsigned int)irq1,  0x08, 0x8E);
     idt_set_gate(34, (unsigned int)irq2,  0x08, 0x8E);

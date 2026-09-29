@@ -20,7 +20,7 @@ static int left_clicked = 0;
 static int mouse_speed_level = 1; // 0=Slow, 1=Normal, 2=Fast
 
 static inline void mouse_wait_write(void) {
-    int timeout = 100000;
+    int timeout = 10000;
     while (timeout--) {
         if ((inb(0x64) & 2) == 0) return;
         io_wait();
@@ -28,7 +28,7 @@ static inline void mouse_wait_write(void) {
 }
 
 static inline void mouse_wait_read(void) {
-    int timeout = 100000;
+    int timeout = 10000;
     while (timeout--) {
         if ((inb(0x64) & 1) == 1) return;
         io_wait();
@@ -153,18 +153,22 @@ void mouse_init(int screen_w, int screen_h) {
         outb(0x60, status);
     }
 
-    // 4. Send Reset (0xFF) to reset any 4-byte/absolute mode left by UEFI firmware
+    // 4. Send Reset (0xFF) to probe if a real PS/2 mouse is physically connected
     mouse_write(0xFF);
-    mouse_read(); // ACK (0xFA)
-    mouse_read(); // Self-test passed (0xAA)
-    mouse_read(); // Device ID (0x00)
+    unsigned char ack = mouse_read(); // Expect ACK (0xFA)
+    int mouse_detected = 0;
 
-    // 5. Send Set Defaults (0xF6) and Enable Data Reporting (0xF4)
-    mouse_write(0xF6);
-    mouse_read(); // Read ACK if sent
+    if (ack == 0xFA) {
+        mouse_read(); // Self-test passed (0xAA)
+        mouse_read(); // Device ID (0x00)
 
-    mouse_write(0xF4);
-    mouse_read(); // Read ACK if sent
+        // 5. Send Set Defaults (0xF6) and Enable Data Reporting (0xF4)
+        mouse_write(0xF6);
+        mouse_read(); // ACK
+        mouse_write(0xF4);
+        mouse_read(); // ACK
+        mouse_detected = 1;
+    }
 
     // 6. Flush any leftover response bytes
     for (int i = 0; i < 32; i++) {
@@ -175,10 +179,26 @@ void mouse_init(int screen_w, int screen_h) {
         }
     }
 
-    // 7. Register handler for IRQ12 (INT 44) and unmask IRQs
-    register_interrupt_handler(44, mouse_callback);
-    pic_unmask_irq(2);
-    pic_unmask_irq(12);
+    if (mouse_detected) {
+        // Real PS/2 mouse is present: register handler and unmask IRQs
+        register_interrupt_handler(44, mouse_callback);
+        pic_unmask_irq(2);
+        pic_unmask_irq(12);
+    } else {
+        // No PS/2 mouse (e.g. Acer Aspire Lite AL15-41 I2C touchpad / bare metal):
+        // Disable auxiliary port so it doesn't float, and keep IRQ12 masked!
+        mouse_wait_write();
+        outb(0x64, 0xA7); // 0xA7 = Disable Auxiliary Mouse Port
+        if (status != 0xFF) {
+            status &= ~2;     // Disable IRQ12 in 8042
+            status |= 0x20;   // Disable mouse clock line
+            mouse_wait_write();
+            outb(0x64, 0x60);
+            mouse_wait_write();
+            outb(0x60, status);
+        }
+        pic_mask_irq(12);
+    }
 }
 
 void mouse_move_relative(int dx, int dy) {
