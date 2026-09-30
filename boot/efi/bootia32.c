@@ -76,7 +76,7 @@ static UINT32 setup_pae_paging(UINT64 fb_base, UINT32 fb_size) {
     UINT64 page_offset = fb_base & 0x1FFFFFULL;
     UINT64 page_base   = fb_base & ~0x1FFFFFULL;
     UINT32 num_pages   = (fb_size + (UINT32)page_offset + 0x1FFFFF) / 0x200000;
-    if (num_pages < 1) num_pages = 1;
+    if (num_pages < 16) num_pages = 16; // Map at least 32 MB aperture for live resolution switching
     if (num_pages > 64) num_pages = 64;
 
     for (UINT32 p = 0; p < num_pages; p++) {
