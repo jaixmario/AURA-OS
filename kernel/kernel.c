@@ -1134,7 +1134,9 @@ void kernel_main(boot_info_t *bi) {
             draw_login_screen();
             gfx_draw_cursor(mx, my);
             gfx_swap_buffers();
-            __asm__ volatile ("hlt");
+            if (!kbd_has_char()) {
+                __asm__ volatile ("sti; hlt");
+            }
             continue;
         }
 
@@ -1260,6 +1262,8 @@ void kernel_main(boot_info_t *bi) {
         gfx_swap_buffers();
 
         // 6. Halt CPU until next interrupt (power efficient & smooth timing)
-        __asm__ volatile ("hlt");
+        if (!kbd_has_char()) {
+            __asm__ volatile ("sti; hlt");
+        }
     }
 }

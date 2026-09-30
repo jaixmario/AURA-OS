@@ -18,6 +18,7 @@
 
 static rtc_time_t current_time = { 0, 0, 12, 26, 9, 2026 };
 static unsigned int last_pit_sec = 0;
+static unsigned int last_cmos_sync = 0;
 static int rtc_initialized = 0;
 
 static unsigned char get_rtc_register(int reg) {
@@ -173,12 +174,19 @@ void rtc_init(void) {
 void rtc_get_datetime(rtc_time_t *out_time) {
     if (!rtc_initialized) {
         rtc_sync_from_cmos();
+        last_cmos_sync = pit_get_uptime_seconds();
     }
 
     unsigned int now_pit = pit_get_uptime_seconds();
     if (now_pit > last_pit_sec) {
         advance_seconds(now_pit - last_pit_sec);
         last_pit_sec = now_pit;
+    }
+
+    // Periodic synchronization from hardware CMOS RTC every 30 seconds
+    if (now_pit >= last_cmos_sync + 30) {
+        rtc_sync_from_cmos();
+        last_cmos_sync = now_pit;
     }
 
     if (out_time) {

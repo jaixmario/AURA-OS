@@ -2,6 +2,7 @@
 #include "kbd.h"
 #include "idt.h"
 #include "pic.h"
+#include "pit.h"
 #include "io.h"
 
 static int mouse_x = 512;
@@ -12,6 +13,7 @@ static int max_y = 768;
 static unsigned char mouse_cycle = 0;
 static signed char mouse_bytes[4];
 static int mouse_packet_size = 3;
+static unsigned int last_mouse_byte_tick = 0;
 
 static int btn_left = 0;
 static int btn_right = 0;
@@ -124,6 +126,13 @@ static void mouse_decode_packet(void) {
 }
 
 void mouse_handle_byte(unsigned char b) {
+    unsigned int now = pit_get_ticks();
+    if (mouse_cycle != 0 && (now - last_mouse_byte_tick > 15)) {
+        // If >150ms elapsed between packet bytes, reset cycle to resync
+        mouse_cycle = 0;
+    }
+    last_mouse_byte_tick = now;
+
     if (mouse_cycle == 0) {
         // First byte of PS/2 mouse packet must have bit 3 set to 1
         if ((b & 0x08) == 0x08) {
@@ -241,18 +250,11 @@ void mouse_init(int screen_w, int screen_h) {
     int mouse_detected = (ok_enable || ok_defaults);
     mouse_detected_flag = mouse_detected;
 
-    if (mouse_detected) {
-        // PS/2 mouse is physically/virtually present and responsive!
-        register_interrupt_handler(44, mouse_callback);
-        pic_unmask_irq(2);  // Slave PIC cascade line
-        pic_unmask_irq(12); // Mouse interrupt line
-    } else {
-        // No PS/2 mouse detected (e.g. laptop with pure I2C touchpad and no external USB mouse).
-        // Safely disable auxiliary port and keep IRQ12 masked to prevent floating line noise.
-        mouse_wait_write(100000);
-        outb(0x64, 0xA7); // Disable auxiliary port
-        pic_mask_irq(12);
-    }
+    // Always register mouse callback and unmask IRQ2 (cascade) & IRQ12 (mouse)
+    // so any PS/2 mouse or touchpad in VMware or on physical laptops is immediately active!
+    register_interrupt_handler(44, mouse_callback);
+    pic_unmask_irq(2);  // Slave PIC cascade line
+    pic_unmask_irq(12); // Mouse interrupt line
 }
 
 int mouse_is_detected(void) {

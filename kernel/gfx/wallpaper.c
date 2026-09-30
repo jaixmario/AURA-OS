@@ -5,9 +5,10 @@
 #include "../libc/string.h"
 
 // Dedicated safe buffer in low extended memory:
-// 0x00A00000 (10MB mark): 1024x768 decoded wallpaper source (3.14MB, ends at 13.14MB)
-// This is strictly below the legacy 15MB-16MB memory hole and avoids all high-memory reserved regions.
-static unsigned int *g_raw_1024 = (unsigned int *)0x00A00000;
+// 0x00C00000 (12MB mark): 1024x768 decoded wallpaper source (3.14MB, ends at 15.14MB)
+// This strictly avoids all overlap with the 1080p backbuffer (0x00200000 - 0x00A70000)
+// and is fully documented in System Info (app_term.c).
+static unsigned int *g_raw_1024 = (unsigned int *)0x00C00000;
 
 static int g_current_wallpaper = 0;
 static int g_loaded_wallpaper = -1;
