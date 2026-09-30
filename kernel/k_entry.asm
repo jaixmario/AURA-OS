@@ -36,6 +36,17 @@ _start:
     jmp 0x08:0x10000 + (.kernel_ready - _start)
 
 .kernel_ready:
+    ; Zero out the BSS section (mandatory for bare-metal C runtime!)
+    extern __bss_start
+    extern __bss_end
+    mov edi, __bss_start
+    mov ecx, __bss_end
+    sub ecx, edi
+    shr ecx, 2
+    xor eax, eax
+    cld
+    rep stosd
+
     push 0x7000 ; pointer to boot_info_t
     call kernel_main
 

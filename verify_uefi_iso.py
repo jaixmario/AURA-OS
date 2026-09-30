@@ -29,7 +29,7 @@ def main():
     ])
 
     print("[*] Waiting for UEFI firmware to boot ISO into AuraOS desktop...")
-    time.sleep(7.0)
+    time.sleep(10.0)
 
     try:
         s = socket.socket()

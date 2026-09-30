@@ -23,6 +23,7 @@ static unsigned int g_tsc_khz = 2500000; // 2.5 GHz default estimate
 static unsigned long long g_cycles_per_tick = 25000000ULL; // 10ms at 2.5 GHz
 static unsigned long long g_cycles_per_frame = 41666666ULL; // 16.6ms at 2.5 GHz
 static unsigned long long g_last_frame_tsc = 0;
+static unsigned long long g_last_cmos_poll_tsc = 0;
 static unsigned char g_last_cmos_sec = 0xFF;
 
 static void pit_callback(registers_t *regs) {
@@ -35,6 +36,11 @@ static void pit_callback(registers_t *regs) {
 
 void pit_init(unsigned int frequency) {
     timer_freq = frequency;
+    timer_ticks = 0;
+    hardware_irq0_count = 0;
+    last_hardware_irq0_tick = 0;
+    tsc_fallback_count = 0;
+
     register_interrupt_handler(32, pit_callback);
 
     unsigned int divisor = 1193180 / frequency;
@@ -49,17 +55,20 @@ void pit_init(unsigned int frequency) {
     // Unmask IRQ0
     pic_unmask_irq(0);
 
-    g_last_tsc = rdtsc();
-    g_last_frame_tsc = g_last_tsc;
-    g_tsc_at_last_cmos_sec = g_last_tsc;
+    unsigned long long now = rdtsc();
+    g_last_tsc = now;
+    g_last_frame_tsc = now;
+    g_tsc_at_last_cmos_sec = now;
+    g_last_cmos_poll_tsc = now;
+    g_tsc_khz = 2500000;
+    g_cycles_per_tick = 25000000ULL;
+    g_cycles_per_frame = 41666666ULL;
 
     // Read initial CMOS second
     outb(0x70, 0x00);
     io_wait();
     g_last_cmos_sec = inb(0x71);
 }
-
-static unsigned long long g_last_cmos_poll_tsc = 0;
 
 void timer_update_from_tsc(void) {
     unsigned long long now = rdtsc();
@@ -79,6 +88,8 @@ void timer_update_from_tsc(void) {
                 g_tsc_khz = (unsigned int)(delta / 1000);
                 g_cycles_per_tick = delta / timer_freq;
                 g_cycles_per_frame = delta / 60;
+                if (g_cycles_per_frame < 5000000ULL) g_cycles_per_frame = 41666666ULL;
+                if (g_cycles_per_tick < 100000ULL) g_cycles_per_tick = 25000000ULL;
             }
             g_last_cmos_sec = cur_sec;
             g_tsc_at_last_cmos_sec = now;
@@ -113,29 +124,16 @@ void timer_wait_frame_or_input(void) {
             break;
         }
 
-        // 2. Poll 8042 controller: if data arrived on 8042 bus, route it!
-        // This guarantees mouse and keyboard work even if UEFI masked IRQ1/IRQ12!
-        unsigned char st = inb(0x64);
-        if (st & 0x01) {
-            unsigned char b = inb(0x60);
-            if (st & 0x20) {
-                mouse_handle_byte(b);
-            } else {
-                kbd_handle_scancode(b);
-            }
-            break;
-        }
-
-        // 3. Keep TSC timekeeper updated
+        // 2. Keep TSC timekeeper updated
         timer_update_from_tsc();
 
-        // 4. Check if 16.6ms (1 frame at 60 FPS) has passed
+        // 3. Check if 16.6ms (1 frame at 60 FPS) has passed
         unsigned long long now = rdtsc();
         if (now - g_last_frame_tsc >= g_cycles_per_frame) {
             break;
         }
 
-        // 5. Low-power CPU pause (guaranteed non-blocking, never halts indefinitely!)
+        // 4. Low-power CPU pause (guaranteed non-blocking, never halts indefinitely!)
         __asm__ volatile ("pause");
     }
     g_last_frame_tsc = rdtsc();

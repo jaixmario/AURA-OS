@@ -139,6 +139,8 @@ void idt_init(void) {
 
     memset(&idt_entries, 0, sizeof(idt_entry_t) * 256);
     memset(&interrupt_handlers, 0, sizeof(isr_handler_t) * 256);
+    memset((void *)g_irq_counts, 0, sizeof(g_irq_counts));
+    g_spurious_irq_count = 0;
 
     // Initialize PIC
     pic_init();

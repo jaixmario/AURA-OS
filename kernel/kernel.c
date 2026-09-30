@@ -927,10 +927,10 @@ static void draw_debug_sidebar(void) {
     cy += line_h;
 
     static unsigned int cmos_h = 0, cmos_m = 0, cmos_s = 0;
-    if ((g_frame_counter % 30) == 0 || (cmos_h == 0 && cmos_m == 0 && cmos_s == 0)) {
+    if ((g_frame_counter % 30) == 0 || cmos_h > 23 || cmos_m > 59 || cmos_s > 59) {
         rtc_get_raw_cmos_time(&cmos_h, &cmos_m, &cmos_s);
     }
-    snprintf(buf, sizeof(buf), "CMOS Clock: %02u:%02u:%02u (Atomic)", cmos_h, cmos_m, cmos_s);
+    snprintf(buf, sizeof(buf), "CMOS Clock: %02u:%02u:%02u (Atomic)", cmos_h % 24, cmos_m % 60, cmos_s % 60);
     gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
     cy += line_h + 3;
 
@@ -1226,6 +1226,10 @@ static void handle_login_key(char key) {
 void kernel_main(boot_info_t *bi) {
     if (bi->magic != 0x41555241) return;
     g_boot_info = bi;
+    g_frame_counter = 0;
+    g_fps = 0;
+    g_fps_accum = 0;
+    g_last_fps_sec = 0;
 
     // 0. Initialize Graphics Subsystem IMMEDIATELY so the display is lit & active
     gfx_init(bi);
