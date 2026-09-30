@@ -216,7 +216,9 @@ static void settings_draw(window_t *win) {
         gfx_drawrect(cx, box_y, cw, 44, COLOR_BORDER);
 
         char pos_str[64];
-        snprintf(pos_str, sizeof(pos_str), "Live Cursor Pos: (%d, %d)  |  Rate: 200 Hz", mouse_get_x(), mouse_get_y());
+        snprintf(pos_str, sizeof(pos_str), "Live Cursor Pos: (%d, %d)  |  %s",
+                 mouse_get_x(), mouse_get_y(),
+                 mouse_is_detected() ? "PS/2 Mouse Ready" : "Keyboard Navigation Active");
         gfx_draw_string(cx + 16, box_y + 14, pos_str, COLOR_WHITE, COLOR_TRANSPARENT);
 
     } else if (active_tab == 3) {

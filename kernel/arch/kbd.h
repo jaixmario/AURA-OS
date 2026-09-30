@@ -17,5 +17,7 @@ void kbd_init(void);
 int  kbd_has_char(void);
 char kbd_get_char(void);
 unsigned char kbd_last_scancode(void);
+int  kbd_is_shift_down(void);
+void kbd_handle_scancode(unsigned char scancode);
 
 #endif

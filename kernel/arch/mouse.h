@@ -14,5 +14,7 @@ void mouse_set_bounds(int screen_w, int screen_h);
 void mouse_move_relative(int dx, int dy);
 void mouse_inject_click(int left, int right);
 void mouse_center(void);
+int  mouse_is_detected(void);
+void mouse_handle_byte(unsigned char b);
 
 #endif

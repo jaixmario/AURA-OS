@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "pic.h"
+#include "io.h"
 #include "../libc/string.h"
 #include "../gfx/gfx.h"
 
@@ -84,6 +85,14 @@ void irq_handler(registers_t *regs) {
     if (interrupt_handlers[regs->int_no] != 0) {
         isr_handler_t handler = interrupt_handlers[regs->int_no];
         handler(regs);
+    } else {
+        // Safety guard for unhandled 8042 controller interrupts (IRQ1 or IRQ12):
+        // If data is pending in port 0x60, read it to de-assert the controller line!
+        if (regs->int_no == 33 || regs->int_no == 44) {
+            if (inb(0x64) & 1) {
+                inb(0x60);
+            }
+        }
     }
     // EOI
     pic_send_eoi(regs->int_no - 32);

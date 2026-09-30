@@ -1096,14 +1096,15 @@ void kernel_main(boot_info_t *bi) {
         if (!g_logged_in) {
             while (kbd_has_char()) {
                 char key = kbd_get_char();
+                int step = kbd_is_shift_down() ? 6 : 18;
                 if ((unsigned char)key == KEY_UP) {
-                    mouse_move_relative(0, -18);
+                    mouse_move_relative(0, -step);
                 } else if ((unsigned char)key == KEY_DOWN) {
-                    mouse_move_relative(0, 18);
+                    mouse_move_relative(0, step);
                 } else if ((unsigned char)key == KEY_LEFT) {
-                    mouse_move_relative(-18, 0);
+                    mouse_move_relative(-step, 0);
                 } else if ((unsigned char)key == KEY_RIGHT) {
-                    mouse_move_relative(18, 0);
+                    mouse_move_relative(step, 0);
                 } else if ((unsigned char)key == KEY_HOME) {
                     mouse_center();
                 } else {
@@ -1141,18 +1142,19 @@ void kernel_main(boot_info_t *bi) {
         while (kbd_has_char()) {
             char key = kbd_get_char();
 
-            // Keyboard Mousekeys: Arrow keys move the mouse cursor!
+            // Keyboard Mousekeys: Arrow keys move the mouse cursor! (Hold Shift for precision mode)
+            int step = kbd_is_shift_down() ? 6 : 18;
             if ((unsigned char)key == KEY_UP) {
-                mouse_move_relative(0, -18);
+                mouse_move_relative(0, -step);
                 continue;
             } else if ((unsigned char)key == KEY_DOWN) {
-                mouse_move_relative(0, 18);
+                mouse_move_relative(0, step);
                 continue;
             } else if ((unsigned char)key == KEY_LEFT) {
-                mouse_move_relative(-18, 0);
+                mouse_move_relative(-step, 0);
                 continue;
             } else if ((unsigned char)key == KEY_RIGHT) {
-                mouse_move_relative(18, 0);
+                mouse_move_relative(step, 0);
                 continue;
             } else if ((unsigned char)key == KEY_HOME) {
                 mouse_center();
@@ -1198,13 +1200,13 @@ void kernel_main(boot_info_t *bi) {
                     start_menu_open = !start_menu_open;
                 } else if (key == 'w' || key == 'W') {
                     // WASD mouse movement on desktop
-                    mouse_move_relative(0, -18);
+                    mouse_move_relative(0, -step);
                 } else if (key == 's' || key == 'S') {
-                    mouse_move_relative(0, 18);
+                    mouse_move_relative(0, step);
                 } else if (key == 'a' || key == 'A') {
-                    mouse_move_relative(-18, 0);
+                    mouse_move_relative(-step, 0);
                 } else if (key == 'd' || key == 'D') {
-                    mouse_move_relative(18, 0);
+                    mouse_move_relative(step, 0);
                 } else if (!sys_is_installed() && (key == 'i' || key == 'I')) {
                     app_installer_launch();
                 } else if (key == 'f' || key == 'F' || (start_menu_open && key == '1')) {
