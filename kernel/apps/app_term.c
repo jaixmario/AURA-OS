@@ -250,7 +250,7 @@ static void term_execute_command(void) {
             if (res == 1) {
                 snprintf(msg, sizeof(msg), "[+] Display switched live to %s!", m->label);
             } else {
-                snprintf(msg, sizeof(msg), "[+] %s saved to boot configuration!", m->label);
+                snprintf(msg, sizeof(msg), "[+] %s saved to boot config! Type 'reboot' to apply.", m->label);
             }
             term_add_line(msg);
         } else {
@@ -266,11 +266,11 @@ static void term_execute_command(void) {
             }
             if (w >= 640 && h >= 480) {
                 int res = display_set_resolution(w, h);
-                char msg[64];
+                char msg[80];
                 if (res == 1) {
                     snprintf(msg, sizeof(msg), "[+] Display switched live to %dx%d!", w, h);
                 } else {
-                    snprintf(msg, sizeof(msg), "[+] %dx%d saved to boot configuration!", w, h);
+                    snprintf(msg, sizeof(msg), "[+] %dx%d saved to boot config! Type 'reboot' to apply.", w, h);
                 }
                 term_add_line(msg);
             } else {

@@ -1,7 +1,9 @@
 #include "display.h"
 #include "io.h"
 #include "mouse.h"
+#include "ata.h"
 #include "../kernel.h"
+#include "../fs/vfs.h"
 #include "../gfx/gfx.h"
 #include "../gfx/wallpaper.h"
 #include "../wm/wm.h"
@@ -34,6 +36,24 @@ static const display_mode_t g_modes[] = {
 #define MODE_COUNT (int)(sizeof(g_modes) / sizeof(g_modes[0]))
 
 static int g_bga_detected = 0;
+static int g_vmware_detected = 0;
+static unsigned short g_vmware_io_base = 0;
+
+static unsigned int pci_read32(unsigned char bus, unsigned char slot, unsigned char func, unsigned char offset) {
+    unsigned int address = (1U << 31) | ((unsigned int)bus << 16) | ((unsigned int)slot << 11) | ((unsigned int)func << 8) | (offset & 0xFC);
+    outl(0x0CF8, address);
+    return inl(0x0CFC);
+}
+
+static void vmware_write(unsigned int index, unsigned int val) {
+    outl(g_vmware_io_base + 0, index);
+    outl(g_vmware_io_base + 1, val);
+}
+
+static unsigned int vmware_read(unsigned int index) {
+    outl(g_vmware_io_base + 0, index);
+    return inl(g_vmware_io_base + 1);
+}
 
 static void bga_write(unsigned short index, unsigned short val) {
     outw(VBE_DISPI_IOPORT_INDEX, index);
@@ -47,14 +67,39 @@ static unsigned short bga_read(unsigned short index) {
 
 void display_init(void) {
     g_bga_detected = 0;
+    g_vmware_detected = 0;
+    g_vmware_io_base = 0;
 
-    // Check Bochs/QEMU BGA version register (0x01CE/0x01CF)
-    unsigned short id = bga_read(VBE_DISPI_INDEX_ID);
-    if (id >= 0xB0C0 && id <= 0xB0C6) {
-        // Double-check by writing VBE_DISPI_ID5 (0xB0C5) and verifying readback
-        bga_write(VBE_DISPI_INDEX_ID, 0xB0C5);
-        if (bga_read(VBE_DISPI_INDEX_ID) == 0xB0C5) {
-            g_bga_detected = 1;
+    // 1. Probe VMware SVGA-II device on PCI bus (Vendor 0x15AD, Dev 0x0405 or 0x0710)
+    for (unsigned char bus = 0; bus < 5; bus++) {
+        for (unsigned char slot = 0; slot < 32; slot++) {
+            unsigned int id = pci_read32(bus, slot, 0, 0);
+            unsigned short vendor = id & 0xFFFF;
+            unsigned short dev = (id >> 16) & 0xFFFF;
+            if (vendor == 0x15AD && (dev == 0x0405 || dev == 0x0710)) {
+                unsigned int bar0 = pci_read32(bus, slot, 0, 0x10);
+                if (bar0 & 1) {
+                    g_vmware_io_base = (unsigned short)(bar0 & ~0x3);
+                    // Negotiate SVGA version 2 ID: 0x90000002
+                    vmware_write(0, 0x90000002);
+                    if (vmware_read(0) == 0x90000002) {
+                        g_vmware_detected = 1;
+                        break;
+                    }
+                }
+            }
+        }
+        if (g_vmware_detected) break;
+    }
+
+    // 2. Probe Bochs/QEMU BGA version register (0x01CE/0x01CF)
+    if (!g_vmware_detected) {
+        unsigned short id = bga_read(VBE_DISPI_INDEX_ID);
+        if (id >= 0xB0C0 && id <= 0xB0C6) {
+            bga_write(VBE_DISPI_INDEX_ID, 0xB0C5);
+            if (bga_read(VBE_DISPI_INDEX_ID) == 0xB0C5) {
+                g_bga_detected = 1;
+            }
         }
     }
 }
@@ -79,15 +124,22 @@ int display_get_current_mode_index(void) {
     return -1;
 }
 
+int display_is_live_switch_supported(void) {
+    return (g_vmware_detected || g_bga_detected);
+}
+
 int display_is_bga_supported(void) {
-    return g_bga_detected;
+    return display_is_live_switch_supported();
 }
 
 const char *display_get_adapter_name(void) {
+    if (g_vmware_detected) {
+        return "VMware SVGA-II Hardware Accelerator";
+    }
     if (g_bga_detected) {
         return "Bochs/QEMU BGA (LFB Direct Mode)";
     }
-    return "VESA VBE 2.0+ Linear Framebuffer";
+    return "VESA VBE 2.0+ / UEFI GOP Linear Framebuffer";
 }
 
 int display_set_mode_by_index(int index) {
@@ -100,7 +152,14 @@ int display_set_resolution(int width, int height) {
     if (!bi) return 0;
 
     int applied_live = 0;
-    if (g_bga_detected) {
+    if (g_vmware_detected) {
+        vmware_write(1, 0); // SVGA_REG_ENABLE = 0
+        vmware_write(2, (unsigned int)width); // SVGA_REG_WIDTH
+        vmware_write(3, (unsigned int)height); // SVGA_REG_HEIGHT
+        vmware_write(7, 32); // SVGA_REG_BITS_PER_PIXEL
+        vmware_write(1, 1); // SVGA_REG_ENABLE = 1
+        applied_live = 1;
+    } else if (g_bga_detected) {
         bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
         bga_write(VBE_DISPI_INDEX_XRES, width);
         bga_write(VBE_DISPI_INDEX_YRES, height);
@@ -130,6 +189,24 @@ int display_set_resolution(int width, int height) {
     char res_str[32];
     snprintf(res_str, sizeof(res_str), "%dx%d", width, height);
     sys_set_setting("RESOLUTION", res_str);
+
+    // Save target resolution to MBR Sector 0
+    // so both BIOS and UEFI bootloaders automatically boot directly in this resolution on restart
+    if (ata_is_available()) {
+        unsigned char mbr[512];
+        if (ata_read_sectors(0, 1, mbr) == 0 && mbr[510] == 0x55 && mbr[511] == 0xAA) {
+            for (int i = 0; i <= 440; i++) {
+                if (mbr[i] == 'A' && mbr[i+1] == 'U' && mbr[i+2] == 'R' && mbr[i+3] == 'A') {
+                    *(unsigned short *)(mbr + i + 4) = (unsigned short)width;
+                    *(unsigned short *)(mbr + i + 6) = (unsigned short)height;
+                    ata_write_sectors(0, 1, mbr);
+                    break;
+                }
+            }
+        }
+    }
+
+    vfs_sync_disk();
 
     return applied_live ? 1 : 2; // 1 = live, 2 = saved for next boot
 }

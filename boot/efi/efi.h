@@ -236,13 +236,65 @@ typedef struct {
     EFI_LOCATE_PROTOCOL LocateProtocol;
 } EFI_BOOT_SERVICES;
 
-// System Table
+// Simple Text Input Protocol
+typedef struct {
+    UINT16 ScanCode;
+    CHAR16 UnicodeChar;
+} EFI_INPUT_KEY;
+
+struct _EFI_SIMPLE_TEXT_INPUT_PROTOCOL;
+typedef EFI_STATUS (EFIAPI *EFI_INPUT_RESET)(
+    struct _EFI_SIMPLE_TEXT_INPUT_PROTOCOL *This,
+    BOOLEAN ExtendedVerification
+);
+typedef EFI_STATUS (EFIAPI *EFI_INPUT_READ_KEY)(
+    struct _EFI_SIMPLE_TEXT_INPUT_PROTOCOL *This,
+    EFI_INPUT_KEY *Key
+);
+
+typedef struct _EFI_SIMPLE_TEXT_INPUT_PROTOCOL {
+    EFI_INPUT_RESET Reset;
+    EFI_INPUT_READ_KEY ReadKeyStroke;
+    void *WaitForKey;
+} EFI_SIMPLE_TEXT_INPUT_PROTOCOL;
+
+// Block I/O Protocol
+struct _EFI_BLOCK_IO_PROTOCOL;
+typedef struct {
+    UINT32 MediaId;
+    BOOLEAN RemovableMedia;
+    BOOLEAN MediaPresent;
+    BOOLEAN LogicalPartition;
+    BOOLEAN ReadOnly;
+    BOOLEAN WriteCaching;
+    UINT32 BlockSize;
+    UINT32 IoAlign;
+    UINT64 LastBlock;
+} EFI_BLOCK_IO_MEDIA;
+
+typedef EFI_STATUS (EFIAPI *EFI_BLOCK_READ)(
+    struct _EFI_BLOCK_IO_PROTOCOL *This,
+    UINT32 MediaId,
+    UINT64 Lba,
+    UINTN BufferSize,
+    VOID *Buffer
+);
+
+typedef struct _EFI_BLOCK_IO_PROTOCOL {
+    UINT64 Revision;
+    EFI_BLOCK_IO_MEDIA *Media;
+    void *Reset;
+    EFI_BLOCK_READ ReadBlocks;
+    void *WriteBlocks;
+    void *FlushBlocks;
+} EFI_BLOCK_IO_PROTOCOL;
+
 typedef struct {
     EFI_TABLE_HEADER Hdr;
     CHAR16 *FirmwareVendor;
     UINT32 FirmwareRevision;
     EFI_HANDLE ConsoleInHandle;
-    void *ConIn;
+    EFI_SIMPLE_TEXT_INPUT_PROTOCOL *ConIn;
     EFI_HANDLE ConsoleOutHandle;
     EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut;
     EFI_HANDLE StandardErrorHandle;

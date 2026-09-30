@@ -110,38 +110,92 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     UINT32 best_pitch = 1024 * 4;
     UINT64 fb_base = 0;
 
-    if (status == EFI_SUCCESS && gop != NULL && gop->Mode != NULL) {
-        if (gop->Mode->Info && gop->Mode->Info->HorizontalResolution >= 800) {
-            best_w = gop->Mode->Info->HorizontalResolution;
-            best_h = gop->Mode->Info->VerticalResolution;
-            best_pitch = (gop->Mode->Info->PixelsPerScanLine > 0) ? (gop->Mode->Info->PixelsPerScanLine * 4) : (best_w * 4);
-            fb_base = gop->Mode->FrameBufferBase;
-        } else {
-            UINT32 chosen_mode = gop->Mode->Mode;
-            for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
-                EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = NULL;
-                UINTN size_of_info = 0;
-                if (gop->QueryMode(gop, m, &size_of_info, &info) == EFI_SUCCESS && info) {
-                    if (info->HorizontalResolution == 1024 && info->VerticalResolution == 768) {
-                        chosen_mode = m;
-                        best_w = 1024;
-                        best_h = 768;
-                        best_pitch = (info->PixelsPerScanLine > 0) ? (info->PixelsPerScanLine * 4) : (1024 * 4);
+    // Check for saved resolution in MBR (Sector 0, offset 392 target_w, offset 394 target_h)
+    UINT32 target_w = 0;
+    UINT32 target_h = 0;
+    EFI_GUID bio_guid = { 0x964e5b21, 0x6459, 0x11d2, { 0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b } };
+    EFI_BLOCK_IO_PROTOCOL *bio = NULL;
+    if (SystemTable->BootServices->LocateProtocol(&bio_guid, NULL, (VOID **)&bio) == EFI_SUCCESS && bio != NULL && bio->Media != NULL) {
+        UINT8 mbr[512];
+        if (bio->ReadBlocks(bio, bio->Media->MediaId, 0, 512, mbr) == EFI_SUCCESS) {
+            if (mbr[510] == 0x55 && mbr[511] == 0xAA) {
+                for (UINTN i = 0; i <= 440; i++) {
+                    if (mbr[i] == 'A' && mbr[i+1] == 'U' && mbr[i+2] == 'R' && mbr[i+3] == 'A') {
+                        UINT16 sw = *(UINT16 *)(mbr + i + 4);
+                        UINT16 sh = *(UINT16 *)(mbr + i + 6);
+                        if (sw >= 640 && sw <= 3840 && sh >= 480 && sh <= 2160) {
+                            target_w = sw;
+                            target_h = sh;
+                        }
                         break;
                     }
                 }
             }
+        }
+    }
 
-            if (chosen_mode != gop->Mode->Mode) {
-                gop->SetMode(gop, chosen_mode);
-            }
+    // Check for optional keyboard shortcut at boot
+    if (SystemTable->ConIn != NULL) {
+        EFI_INPUT_KEY k;
+        if (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) == EFI_SUCCESS) {
+            if (k.UnicodeChar == L'1')      { target_w = 1920; target_h = 1080; }
+            else if (k.UnicodeChar == L'2') { target_w = 1600; target_h = 900; }
+            else if (k.UnicodeChar == L'3') { target_w = 1366; target_h = 768; }
+            else if (k.UnicodeChar == L'4') { target_w = 1280; target_h = 720; }
+            else if (k.UnicodeChar == L'5') { target_w = 1024; target_h = 768; }
+            else if (k.UnicodeChar == L'6') { target_w = 800;  target_h = 600; }
+        }
+    }
 
-            if (gop->Mode && gop->Mode->Info) {
-                best_w = gop->Mode->Info->HorizontalResolution;
-                best_h = gop->Mode->Info->VerticalResolution;
-                best_pitch = (gop->Mode->Info->PixelsPerScanLine > 0) ? (gop->Mode->Info->PixelsPerScanLine * 4) : (best_w * 4);
-                fb_base = gop->Mode->FrameBufferBase;
+    if (status == EFI_SUCCESS && gop != NULL && gop->Mode != NULL && gop->Mode->MaxMode > 0) {
+        UINT32 chosen_mode = gop->Mode->Mode;
+        int found_exact = 0;
+
+        // A. Look for exact match to target resolution
+        if (target_w > 0 && target_h > 0) {
+            for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
+                EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = NULL;
+                UINTN size_of_info = 0;
+                if (gop->QueryMode(gop, m, &size_of_info, &info) == EFI_SUCCESS && info) {
+                    if (info->HorizontalResolution == target_w && info->VerticalResolution == target_h) {
+                        chosen_mode = m;
+                        found_exact = 1;
+                        break;
+                    }
+                }
             }
+        }
+
+        // B. If no target specified or not found, choose best mode (prefer 1920x1080, else highest <= 1920x1080)
+        if (!found_exact) {
+            UINT32 best_score = 0;
+            for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
+                EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = NULL;
+                UINTN size_of_info = 0;
+                if (gop->QueryMode(gop, m, &size_of_info, &info) == EFI_SUCCESS && info) {
+                    UINT32 w = info->HorizontalResolution;
+                    UINT32 h = info->VerticalResolution;
+                    if (w >= 800 && w <= 1920 && h >= 600 && h <= 1080) {
+                        UINT32 score = w * h;
+                        if (w == 1920 && h == 1080) score += 20000000; // Prefer Full HD
+                        if (score > best_score) {
+                            best_score = score;
+                            chosen_mode = m;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (chosen_mode != gop->Mode->Mode) {
+            gop->SetMode(gop, chosen_mode);
+        }
+
+        if (gop->Mode && gop->Mode->Info) {
+            best_w = gop->Mode->Info->HorizontalResolution;
+            best_h = gop->Mode->Info->VerticalResolution;
+            best_pitch = (gop->Mode->Info->PixelsPerScanLine > 0) ? (gop->Mode->Info->PixelsPerScanLine * 4) : (best_w * 4);
+            fb_base = gop->Mode->FrameBufferBase;
         }
     }
 

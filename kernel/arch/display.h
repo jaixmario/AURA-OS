@@ -24,6 +24,7 @@ int display_get_current_mode_index(void);
 int display_set_mode_by_index(int index);
 int display_set_resolution(int width, int height);
 int display_is_bga_supported(void);
+int display_is_live_switch_supported(void);
 const char *display_get_adapter_name(void);
 int display_get_edid_info(edid_info_t *out_info);
 int display_auto_detect(void);

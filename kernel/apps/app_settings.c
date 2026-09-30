@@ -424,7 +424,7 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
             if (res == 1) {
                 snprintf(display_status_msg, sizeof(display_status_msg), "[v] Auto-detected & applied %dx%d!", edid.native_w, edid.native_h);
             } else {
-                snprintf(display_status_msg, sizeof(display_status_msg), "[v] Auto-detected %dx%d (saved to config)!", edid.native_w, edid.native_h);
+                snprintf(display_status_msg, sizeof(display_status_msg), "[v] Auto-detected %dx%d! Click 'Restart PC' below.", edid.native_w, edid.native_h);
             }
             return;
         }
@@ -439,7 +439,7 @@ static void settings_click(window_t *win, int rx, int ry, int btn) {
                 if (res == 1) {
                     snprintf(display_status_msg, sizeof(display_status_msg), "[v] Switched to %s live!", m->label);
                 } else {
-                    snprintf(display_status_msg, sizeof(display_status_msg), "[v] Saved %s to boot config!", m->label);
+                    snprintf(display_status_msg, sizeof(display_status_msg), "[v] Saved %s! Click 'Restart PC' below.", m->label);
                 }
                 return;
             }

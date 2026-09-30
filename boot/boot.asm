@@ -43,9 +43,12 @@ start:
     mov di, 0x5400
     int 0x10
     cmp ax, 0x004F
-    jne .check_key
+    jne .check_vbe
     cmp word [di + 54], 0     ; Pixel clock != 0
-    jz .check_key
+    jz .check_vbe
+    ; Only override with EDID if user did not set a custom resolution (default is 1920x1080)
+    cmp word [target_w], 1920
+    jne .check_vbe
     ; Extract native monitor width: ((byte[58] >> 4) << 8) | byte[56]
     mov ah, [di + 58]
     shr ah, 4
@@ -56,18 +59,6 @@ start:
     shr ah, 4
     mov al, [di + 59]
     mov [target_h], ax
-
-.check_key:
-    ; 3. Optional Key '1' forces 1080p
-    mov ah, 0x01
-    int 0x16
-    jz .check_vbe
-    mov ah, 0x00
-    int 0x16
-    cmp al, '1'
-    jne .check_vbe
-    mov word [target_w], 1920
-    mov word [target_h], 1080
 
 .check_vbe:
     ; 4. Query VBE 2.0+ Controller Info
@@ -117,7 +108,7 @@ start:
     jmp .scan_done
 
 .save_fallback:
-    cmp word [fallback_mode], 0
+    cmp word [fallback_mode], byte 0
     jnz .scan_loop
     mov [fallback_mode], cx
     jmp .scan_loop
@@ -127,10 +118,9 @@ start:
     test bx, bx
     jnz .set_mode
     mov bx, [fallback_mode]
+.set_mode:
     test bx, bx
     jz error
-
-.set_mode:
     ; Read mode info block into 0x5200
     mov cx, bx
     mov ax, 0x4F01
@@ -176,16 +166,16 @@ start:
     jmp dword 0x08:0x7E00
 
 error:
-    mov ah, 0x0E
-    mov al, 'E'
+    mov ax, 0x0E45
     int 0x10
 .hang:
     hlt
     jmp .hang
 
 is_live_default: db 0
-target_w:      dw 1024
-target_h:      dw 768
+res_magic:     db 'A','U','R','A' ; 'AURA' magic tag
+target_w:      dw 1920
+target_h:      dw 1080
 selected_mode: dw 0
 fallback_mode: dw 0
 
