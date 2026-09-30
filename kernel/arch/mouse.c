@@ -169,12 +169,20 @@ void mouse_handle_byte(unsigned char b) {
     }
 }
 
+static volatile unsigned int g_empty_mouse_irqs = 0;
+
 static void mouse_callback(registers_t *regs) {
     (void)regs;
     unsigned char status = inb(0x64);
     if (!(status & 0x01)) {
+        g_empty_mouse_irqs++;
+        if (g_empty_mouse_irqs > 32) {
+            // Interrupt storm detected from floating auxiliary line! Mask IRQ12 to protect CPU!
+            pic_mask_irq(12);
+        }
         return; // No data available
     }
+    g_empty_mouse_irqs = 0;
 
     // Always read port 0x60 to clear 8042 controller output buffer and de-assert IRQ!
     unsigned char b = inb(0x60);
@@ -252,11 +260,18 @@ void mouse_init(int screen_w, int screen_h) {
     int mouse_detected = (ok_enable || ok_defaults);
     mouse_detected_flag = mouse_detected;
 
-    // Always register mouse callback and unmask IRQ2 (cascade) & IRQ12 (mouse)
-    // so any PS/2 mouse or touchpad in VMware or on physical laptops is immediately active!
-    register_interrupt_handler(44, mouse_callback);
-    pic_unmask_irq(2);  // Slave PIC cascade line
-    pic_unmask_irq(12); // Mouse interrupt line
+    if (mouse_detected) {
+        // PS/2 mouse is physically or virtually present and responsive!
+        register_interrupt_handler(44, mouse_callback);
+        pic_unmask_irq(2);  // Slave PIC cascade line
+        pic_unmask_irq(12); // Mouse interrupt line
+    } else {
+        // No PS/2 mouse detected (modern laptop with pure I2C touchpad and no external mouse).
+        // Safely disable auxiliary port and keep IRQ12 masked to prevent floating line noise / interrupt storms!
+        mouse_wait_write(100000);
+        outb(0x64, 0xA7); // Disable auxiliary port
+        pic_mask_irq(12);
+    }
 }
 
 int mouse_is_detected(void) {

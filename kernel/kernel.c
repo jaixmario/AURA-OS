@@ -926,8 +926,10 @@ static void draw_debug_sidebar(void) {
     gfx_draw_string(p_x + 8, cy, buf, hw_timer ? COLOR_GREEN : COLOR_YELLOW, COLOR_TRANSPARENT);
     cy += line_h;
 
-    unsigned int cmos_h = 0, cmos_m = 0, cmos_s = 0;
-    rtc_get_raw_cmos_time(&cmos_h, &cmos_m, &cmos_s);
+    static unsigned int cmos_h = 0, cmos_m = 0, cmos_s = 0;
+    if ((g_frame_counter % 30) == 0 || (cmos_h == 0 && cmos_m == 0 && cmos_s == 0)) {
+        rtc_get_raw_cmos_time(&cmos_h, &cmos_m, &cmos_s);
+    }
     snprintf(buf, sizeof(buf), "CMOS Clock: %02u:%02u:%02u (Atomic)", cmos_h, cmos_m, cmos_s);
     gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
     cy += line_h + 3;
@@ -1289,6 +1291,7 @@ void kernel_main(boot_info_t *bi) {
     int init_my = mouse_get_y();
     if (!g_logged_in) {
         draw_login_screen();
+        draw_debug_sidebar();
         gfx_draw_cursor(init_mx, init_my);
     } else {
         draw_wallpaper();
@@ -1296,11 +1299,17 @@ void kernel_main(boot_info_t *bi) {
         wm_render();
         draw_taskbar();
         draw_start_menu();
+        draw_debug_sidebar();
         gfx_draw_cursor(init_mx, init_my);
     }
     gfx_swap_buffers();
 
-    // Drain any residual scancodes from firmware / boot selection before activating input loop
+    // Drain any residual bytes in 8042 controller and keyboard buffer before activating interrupts
+    int drain_limit = 100;
+    while ((inb(0x64) & 1) && --drain_limit > 0) {
+        inb(0x60);
+        io_wait();
+    }
     while (kbd_has_char()) {
         kbd_get_char();
     }
@@ -1352,6 +1361,7 @@ void kernel_main(boot_info_t *bi) {
             }
 
             draw_login_screen();
+            draw_debug_sidebar();
             gfx_draw_cursor(mx, my);
             gfx_swap_buffers();
             timer_wait_frame_or_input();

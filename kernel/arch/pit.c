@@ -59,29 +59,34 @@ void pit_init(unsigned int frequency) {
     g_last_cmos_sec = inb(0x71);
 }
 
+static unsigned long long g_last_cmos_poll_tsc = 0;
+
 void timer_update_from_tsc(void) {
     unsigned long long now = rdtsc();
 
-    // 1. Dynamic frequency calibration against CMOS RTC seconds (non-blocking)
-    outb(0x70, 0x00);
-    io_wait();
-    unsigned char cur_sec = inb(0x71);
-    if (g_last_cmos_sec == 0xFF) {
-        g_last_cmos_sec = cur_sec;
-        g_tsc_at_last_cmos_sec = now;
-    } else if (cur_sec != g_last_cmos_sec) {
-        unsigned long long delta = now - g_tsc_at_last_cmos_sec;
-        if (delta >= 400000000ULL && delta <= 6000000000ULL) {
-            g_tsc_khz = (unsigned int)(delta / 1000);
-            g_cycles_per_tick = delta / timer_freq;
-            g_cycles_per_frame = delta / 60;
+    // 1. Dynamic frequency calibration against CMOS RTC seconds (throttled to avoid LPC bus saturation)
+    if (g_last_cmos_poll_tsc == 0 || (now - g_last_cmos_poll_tsc > 250000000ULL)) {
+        g_last_cmos_poll_tsc = now;
+        outb(0x70, 0x00);
+        io_wait();
+        unsigned char cur_sec = inb(0x71);
+        if (g_last_cmos_sec == 0xFF) {
+            g_last_cmos_sec = cur_sec;
+            g_tsc_at_last_cmos_sec = now;
+        } else if (cur_sec != g_last_cmos_sec) {
+            unsigned long long delta = now - g_tsc_at_last_cmos_sec;
+            if (delta >= 400000000ULL && delta <= 6000000000ULL) {
+                g_tsc_khz = (unsigned int)(delta / 1000);
+                g_cycles_per_tick = delta / timer_freq;
+                g_cycles_per_frame = delta / 60;
+            }
+            g_last_cmos_sec = cur_sec;
+            g_tsc_at_last_cmos_sec = now;
         }
-        g_last_cmos_sec = cur_sec;
-        g_tsc_at_last_cmos_sec = now;
     }
 
     // 2. Fallback timekeeping if hardware IRQ0 is dormant or not routed by UEFI firmware:
-    // If hardware IRQ0 hasn't fired in the last 50ms, advance ticks from TSC!
+    // If hardware IRQ0 hasn't fired in the last 50ms, advance ticks from invariant TSC!
     if (hardware_irq0_count == 0 || (timer_ticks > last_hardware_irq0_tick + 5)) {
         if (now > g_last_tsc) {
             unsigned long long elapsed = now - g_last_tsc;
@@ -130,14 +135,8 @@ void timer_wait_frame_or_input(void) {
             break;
         }
 
-        // 5. Low-power CPU pause
-        // If hardware IRQ0 is active and ticking, brief sti; hlt is safe;
-        // but if hardware IRQ0 is dormant, use pause so CPU never hangs!
-        if (pit_is_hardware_irq_active()) {
-            __asm__ volatile ("sti; hlt");
-        } else {
-            __asm__ volatile ("pause");
-        }
+        // 5. Low-power CPU pause (guaranteed non-blocking, never halts indefinitely!)
+        __asm__ volatile ("pause");
     }
     g_last_frame_tsc = rdtsc();
 }

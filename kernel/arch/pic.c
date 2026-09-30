@@ -20,11 +20,18 @@ unsigned int pic_get_apic_svr(void) { return g_apic_svr; }
 unsigned int pic_get_apic_tpr(void) { return g_apic_tpr; }
 int pic_is_apic_present(void) { return g_apic_present; }
 
+static inline void wrmsr(unsigned int msr, unsigned int lo, unsigned int hi) {
+    __asm__ volatile ("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
+}
+
+static inline void rdmsr(unsigned int msr, unsigned int *lo, unsigned int *hi) {
+    __asm__ volatile ("rdmsr" : "=a"(*lo), "=d"(*hi) : "c"(msr));
+}
+
 void pic_apic_eoi(void) {
-    if (g_apic_present && g_apic_base) {
-        volatile unsigned int *apic = (volatile unsigned int *)g_apic_base;
-        apic[0x0B0 / 4] = 0;
-    }
+    // ExtINT delivery mode passes 8259 PIC interrupts directly and does NOT
+    // set an In-Service Register bit in the Local APIC (Intel SDM Section 10.8.5).
+    // PIC EOI (pic_send_eoi) is all that is required.
 }
 
 static void apic_setup_virtual_wire_mode(void) {
@@ -36,49 +43,75 @@ static void apic_setup_virtual_wire_mode(void) {
     }
 
     // Read IA32_APIC_BASE MSR (0x1B)
-    unsigned int lo, hi;
-    __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0x1B));
+    unsigned int lo = 0, hi = 0;
+    rdmsr(0x1B, &lo, &hi);
     if (!(lo & (1 << 11))) {
         return; // APIC is hardware disabled; external PIC routes directly to CPU
     }
 
-    unsigned int apic_base = lo & 0xFFFFF000;
-    if (apic_base == 0) apic_base = 0xFEE00000;
+    if (lo & (1 << 10)) {
+        // x2APIC Mode is active (standard on modern AMD Ryzen / Intel UEFI laptops):
+        // In x2APIC mode, the MMIO interface (0xFEE00000) is DISABLED by hardware.
+        // All APIC registers are accessed via MSRs (0x800-0x83F).
+        // 1. Clear Task Priority Register (TPR, MSR 0x808)
+        wrmsr(0x808, 0, 0);
 
-    volatile unsigned int *apic = (volatile unsigned int *)apic_base;
+        // 2. Enable Local APIC in software and set spurious vector to 0xFF (SVR, MSR 0x80F)
+        wrmsr(0x80F, 0x1FF, 0);
 
-    // 1. Clear Task Priority Register (TPR, offset 0x080) to allow all interrupt priorities
-    apic[0x080 / 4] = 0;
+        // 3. Mask unused LVTs
+        wrmsr(0x832, 0x10000, 0); // Timer LVT
+        wrmsr(0x833, 0x10000, 0); // Thermal LVT
+        wrmsr(0x834, 0x10000, 0); // Perf LVT
+        wrmsr(0x837, 0x10000, 0); // Error LVT
 
-    // 2. Enable Local APIC in software and set spurious interrupt vector to 0xFF (offset 0x0F0)
-    // Bit 8 is the APIC Software Enable bit (required for LINT0 routing)
-    apic[0x0F0 / 4] = 0x1FF;
+        // 4. Configure LINT0 for ExtINT mode (Virtual Wire Mode):
+        // Delivery mode 111b (ExtINT = 0x700), edge-triggered, active-high, unmasked (bit 16=0)
+        wrmsr(0x835, 0x00000700, 0);
 
-    // 3. Mask unused Local APIC internal timers/counters to avoid unexpected APIC interrupts
-    apic[0x320 / 4] = 0x10000; // Timer LVT (bit 16 = masked)
-    apic[0x330 / 4] = 0x10000; // Thermal LVT (bit 16 = masked)
-    apic[0x340 / 4] = 0x10000; // Performance Counter LVT (bit 16 = masked)
-    apic[0x370 / 4] = 0x10000; // Error LVT (bit 16 = masked)
+        // 5. Configure LINT1 for NMI delivery mode:
+        wrmsr(0x836, 0x00000400, 0);
 
-    // 4. Configure LINT0 for ExtINT mode (Virtual Wire Mode):
-    // Delivery mode 111b (bits 10:8 = 0x700), edge-triggered (bit 15 = 0), active-high (bit 13 = 0),
-    // and UNMASKED (bit 16 = 0).
-    // This allows the 8259 Master PIC to transparently deliver interrupts (PIT IRQ0, KBD IRQ1, Mouse IRQ12) to the CPU!
-    apic[0x350 / 4] = 0x00000700;
+        g_apic_present = 1;
+        g_apic_base = 0x00000800; // Signifies x2APIC MSR architecture in HUD
+        rdmsr(0x835, &g_apic_lint0, &hi);
+        rdmsr(0x80F, &g_apic_svr, &hi);
+        rdmsr(0x808, &g_apic_tpr, &hi);
+    } else {
+        // Legacy xAPIC Mode (MMIO interface at apic_base, standard in BIOS / QEMU / VMware):
+        unsigned int apic_base = lo & 0xFFFFF000;
+        if (apic_base == 0) apic_base = 0xFEE00000;
 
-    // 5. Configure LINT1 for NMI delivery mode:
-    // Delivery mode 100b (bits 10:8 = 0x400), unmasked (bit 16 = 0).
-    apic[0x360 / 4] = 0x00000400;
+        volatile unsigned int *apic = (volatile unsigned int *)apic_base;
 
-    // 6. Clear any pending Local APIC interrupt
-    apic[0x0B0 / 4] = 0;
+        // 1. Clear Task Priority Register (TPR, offset 0x080) to allow all interrupt priorities
+        apic[0x080 / 4] = 0;
 
-    // Save state for live debug HUD
-    g_apic_present = 1;
-    g_apic_base = apic_base;
-    g_apic_lint0 = apic[0x350 / 4];
-    g_apic_svr = apic[0x0F0 / 4];
-    g_apic_tpr = apic[0x080 / 4];
+        // 2. Enable Local APIC in software and set spurious interrupt vector to 0xFF (offset 0x0F0)
+        apic[0x0F0 / 4] = 0x1FF;
+
+        // 3. Mask unused Local APIC internal timers/counters to avoid unexpected APIC interrupts
+        apic[0x320 / 4] = 0x10000; // Timer LVT (bit 16 = masked)
+        apic[0x330 / 4] = 0x10000; // Thermal LVT (bit 16 = masked)
+        apic[0x340 / 4] = 0x10000; // Performance Counter LVT (bit 16 = masked)
+        apic[0x370 / 4] = 0x10000; // Error LVT (bit 16 = masked)
+
+        // 4. Configure LINT0 for ExtINT mode (Virtual Wire Mode):
+        apic[0x350 / 4] = 0x00000700;
+
+        // 5. Configure LINT1 for NMI delivery mode:
+        apic[0x360 / 4] = 0x00000400;
+
+        // 6. Clear any pending Local APIC interrupt
+        apic[0x0B0 / 4] = 0;
+
+        // Save state for live debug HUD
+        g_apic_present = 1;
+        g_apic_base = apic_base;
+        g_apic_lint0 = apic[0x350 / 4];
+        g_apic_svr = apic[0x0F0 / 4];
+        g_apic_tpr = apic[0x080 / 4];
+    }
 }
 
 void pic_init(void) {
