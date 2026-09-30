@@ -8,6 +8,25 @@ void pic_send_eoi(unsigned char irq) {
     outb(PIC1_COMMAND, PIC_EOI);
 }
 
+static unsigned int g_apic_base = 0;
+static unsigned int g_apic_lint0 = 0;
+static unsigned int g_apic_svr = 0;
+static unsigned int g_apic_tpr = 0;
+static int g_apic_present = 0;
+
+unsigned int pic_get_apic_base(void) { return g_apic_base; }
+unsigned int pic_get_apic_lint0(void) { return g_apic_lint0; }
+unsigned int pic_get_apic_svr(void) { return g_apic_svr; }
+unsigned int pic_get_apic_tpr(void) { return g_apic_tpr; }
+int pic_is_apic_present(void) { return g_apic_present; }
+
+void pic_apic_eoi(void) {
+    if (g_apic_present && g_apic_base) {
+        volatile unsigned int *apic = (volatile unsigned int *)g_apic_base;
+        apic[0x0B0 / 4] = 0;
+    }
+}
+
 static void apic_setup_virtual_wire_mode(void) {
     // Check CPUID for APIC support (EDX bit 9 of CPUID leaf 1)
     unsigned int eax, ebx, ecx, edx;
@@ -53,6 +72,13 @@ static void apic_setup_virtual_wire_mode(void) {
 
     // 6. Clear any pending Local APIC interrupt
     apic[0x0B0 / 4] = 0;
+
+    // Save state for live debug HUD
+    g_apic_present = 1;
+    g_apic_base = apic_base;
+    g_apic_lint0 = apic[0x350 / 4];
+    g_apic_svr = apic[0x0F0 / 4];
+    g_apic_tpr = apic[0x080 / 4];
 }
 
 void pic_init(void) {

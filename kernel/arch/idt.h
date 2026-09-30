@@ -27,4 +27,7 @@ void idt_init(void);
 void idt_set_gate(unsigned char num, unsigned int base, unsigned short sel, unsigned char flags);
 void register_interrupt_handler(unsigned char n, isr_handler_t handler);
 
+unsigned int idt_get_irq_count(int irq);
+unsigned int idt_get_spurious_count(void);
+
 #endif

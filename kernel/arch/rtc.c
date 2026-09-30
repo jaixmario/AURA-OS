@@ -177,14 +177,16 @@ void rtc_get_datetime(rtc_time_t *out_time) {
         last_cmos_sync = pit_get_uptime_seconds();
     }
 
+    timer_update_from_tsc();
+
     unsigned int now_pit = pit_get_uptime_seconds();
     if (now_pit > last_pit_sec) {
         advance_seconds(now_pit - last_pit_sec);
         last_pit_sec = now_pit;
     }
 
-    // Periodic synchronization from hardware CMOS RTC every 30 seconds
-    if (now_pit >= last_cmos_sync + 30) {
+    // Periodic synchronization from hardware CMOS RTC every 15 seconds
+    if (now_pit >= last_cmos_sync + 15) {
         rtc_sync_from_cmos();
         last_cmos_sync = now_pit;
     }
@@ -192,6 +194,29 @@ void rtc_get_datetime(rtc_time_t *out_time) {
     if (out_time) {
         *out_time = current_time;
     }
+}
+
+void rtc_get_raw_cmos_time(unsigned int *h, unsigned int *m, unsigned int *s) {
+    unsigned char sec = get_rtc_register(RTC_SEC);
+    unsigned char min = get_rtc_register(RTC_MIN);
+    unsigned char hr  = get_rtc_register(RTC_HOUR);
+    unsigned char regB = get_rtc_register(RTC_STAT_B);
+
+    if (!(regB & 0x04)) {
+        sec = ((sec / 16) * 10) + (sec & 0x0F);
+        min = ((min / 16) * 10) + (min & 0x0F);
+        hr  = (((hr & 0x0F) + (((hr & 0x70) / 16) * 10)) | (hr & 0x80));
+    }
+    if (!(regB & 0x02) && (hr & 0x80)) {
+        hr = ((hr & 0x7F) + 12) % 24;
+    }
+    if (sec > 59) sec = 0;
+    if (min > 59) min = 0;
+    if (hr > 23) hr = 0;
+
+    if (h) *h = hr;
+    if (m) *m = min;
+    if (s) *s = sec;
 }
 
 void rtc_set_datetime(const rtc_time_t *new_time) {

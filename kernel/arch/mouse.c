@@ -14,6 +14,7 @@ static unsigned char mouse_cycle = 0;
 static signed char mouse_bytes[4];
 static int mouse_packet_size = 3;
 static unsigned int last_mouse_byte_tick = 0;
+static volatile unsigned char g_last_mouse_byte = 0;
 
 static int btn_left = 0;
 static int btn_right = 0;
@@ -126,6 +127,7 @@ static void mouse_decode_packet(void) {
 }
 
 void mouse_handle_byte(unsigned char b) {
+    g_last_mouse_byte = b;
     unsigned int now = pit_get_ticks();
     if (mouse_cycle != 0 && (now - last_mouse_byte_tick > 15)) {
         // If >150ms elapsed between packet bytes, reset cycle to resync
@@ -259,6 +261,14 @@ void mouse_init(int screen_w, int screen_h) {
 
 int mouse_is_detected(void) {
     return mouse_detected_flag;
+}
+
+unsigned char mouse_get_last_byte(void) {
+    return g_last_mouse_byte;
+}
+
+unsigned char mouse_get_cycle(void) {
+    return mouse_cycle;
 }
 
 void mouse_move_relative(int dx, int dy) {

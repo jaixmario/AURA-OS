@@ -1,6 +1,7 @@
 #include "kernel.h"
 #include "arch/idt.h"
 #include "arch/pit.h"
+#include "arch/pic.h"
 #include "arch/kbd.h"
 #include "arch/mouse.h"
 #include "arch/rtc.h"
@@ -12,6 +13,12 @@
 #include "arch/display.h"
 #include "apps/apps.h"
 #include "libc/string.h"
+
+static int g_debug_hud_open = 1; // 1 = Visible by default on boot for physical hardware monitoring
+static unsigned int g_frame_counter = 0;
+static unsigned int g_fps = 60;
+static unsigned int g_fps_accum = 0;
+static unsigned int g_last_fps_sec = 0;
 
 static int start_menu_open = 0;
 static boot_info_t *g_boot_info = 0;
@@ -555,7 +562,15 @@ static void draw_taskbar(void) {
     gfx_drawrect(clock_x, tb_y + 6, clock_w, 36, is_hover_clock ? COLOR_ACCENT : COLOR_BORDER);
     gfx_draw_string(clock_x + 14, tb_y + 16, dt_buf, is_hover_clock ? COLOR_ACCENT : COLOR_WHITE, COLOR_TRANSPARENT);
 
-    // Window items on taskbar (starts at x=108 after Start button, ends before Date/Time widget)
+    // Live Debug Monitor HUD Toggle Button on Taskbar
+    int dbg_w = 62;
+    int dbg_x = clock_x - dbg_w - 6;
+    int is_hover_dbg = (mx >= dbg_x && mx <= dbg_x + dbg_w && my >= tb_y + 6 && my <= tb_y + 42);
+    gfx_fillrect(dbg_x, tb_y + 6, dbg_w, 36, is_hover_dbg ? RGB(42, 46, 70) : RGB(30, 32, 48));
+    gfx_drawrect(dbg_x, tb_y + 6, dbg_w, 36, g_debug_hud_open ? COLOR_ACCENT : COLOR_BORDER);
+    gfx_draw_string(dbg_x + 10, tb_y + 16, "DEBUG", g_debug_hud_open ? COLOR_ACCENT : COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+
+    // Window items on taskbar (starts at x=108 after Start button, ends before DEBUG/Clock widget)
     int btn_x = 108;
     int tab_w = 98;
     int tab_stride = 102;
@@ -565,7 +580,7 @@ static void draw_taskbar(void) {
         window_t *win = wm_get_window_at_index(i);
         if (!win || !win->is_open) continue;
 
-        if (btn_x + tab_w > clock_x - 6) break;
+        if (btn_x + tab_w > dbg_x - 6) break;
 
         int is_act = (win == active && !win->is_minimized);
         unsigned int tab_bg = is_act ? COLOR_ACTIVE_HEADER : RGB(30, 32, 48);
@@ -775,6 +790,33 @@ static void handle_desktop_click(int mx, int my) {
 
     int clock_w = 180;
     int clock_x = w - 116 - clock_w;
+    int dbg_w = 62;
+    int dbg_x = clock_x - dbg_w - 6;
+
+    // Check click on taskbar DEBUG button
+    if (mx >= dbg_x && mx <= dbg_x + dbg_w && my >= tb_y + 6 && my <= tb_y + 42) {
+        g_debug_hud_open = !g_debug_hud_open;
+        return;
+    }
+
+    // Check click on Debug HUD header or badge
+    int p_w = 264;
+    int p_x = w - p_w - 8;
+    int p_y = 8;
+    if (g_debug_hud_open) {
+        if (mx >= p_x && mx <= p_x + p_w && my >= p_y && my <= p_y + 26) {
+            g_debug_hud_open = 0;
+            return;
+        }
+    } else {
+        int badge_w = 76;
+        int badge_x = w - badge_w - 10;
+        int badge_y = 10;
+        if (mx >= badge_x && mx <= badge_x + badge_w && my >= badge_y && my <= badge_y + 24) {
+            g_debug_hud_open = 1;
+            return;
+        }
+    }
 
     // Date & Time widget on the right clicked -> Open Date & Time settings!
     if (mx >= clock_x && mx <= clock_x + clock_w && my >= tb_y + 6 && my <= tb_y + 42) {
@@ -782,16 +824,16 @@ static void handle_desktop_click(int mx, int my) {
         return;
     }
 
-    // Taskbar window item clicked (starts after Start button at x=108)
+    // Taskbar window item clicked (starts after Start button at x=108, ends before DEBUG button)
     int tab_w = 98;
     int tab_stride = 102;
-    if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 108 && mx < clock_x - 6) {
+    if (my >= tb_y + 6 && my <= tb_y + 42 && mx >= 108 && mx < dbg_x - 6) {
         int btn_x = 108;
         for (int i = 0; i < MAX_WINDOWS; i++) {
             window_t *win = wm_get_window_at_index(i);
             if (!win || !win->is_open) continue;
 
-            if (btn_x + tab_w > clock_x - 6) break;
+            if (btn_x + tab_w > dbg_x - 6) break;
 
             if (mx >= btn_x && mx <= btn_x + tab_w) {
                 if (win->is_minimized) {
@@ -809,6 +851,158 @@ static void handle_desktop_click(int mx, int my) {
             btn_x += tab_stride;
         }
     }
+}
+
+static void draw_debug_sidebar(void) {
+    g_frame_counter++;
+    g_fps_accum++;
+    unsigned int sec = pit_get_uptime_seconds();
+    if (sec != g_last_fps_sec) {
+        g_fps = g_fps_accum;
+        g_fps_accum = 0;
+        g_last_fps_sec = sec;
+    }
+
+    int w = gfx_get_width();
+    int h = gfx_get_height();
+
+    // If HUD is closed, render a compact "[DEBUG]" badge in upper right corner
+    if (!g_debug_hud_open) {
+        int badge_w = 76;
+        int badge_h = 24;
+        int badge_x = w - badge_w - 10;
+        int badge_y = 10;
+        gfx_fillrect(badge_x, badge_y, badge_w, badge_h, RGB(18, 20, 32));
+        gfx_drawrect(badge_x, badge_y, badge_w, badge_h, COLOR_ACCENT);
+        gfx_draw_string(badge_x + 8, badge_y + 5, "[DEBUG]", COLOR_ACCENT, COLOR_TRANSPARENT);
+        return;
+    }
+
+    int p_w = 264;
+    int p_h = h - 64;
+    if (p_h > 540) p_h = 540;
+    int p_x = w - p_w - 8;
+    int p_y = 8;
+
+    // Semi-transparent deep card shadow & background
+    gfx_draw_shadow(p_x, p_y, p_w, p_h, 8);
+    gfx_fillrect(p_x, p_y, p_w, p_h, RGB(13, 15, 25));
+    gfx_drawrect(p_x, p_y, p_w, p_h, RGB(55, 75, 125));
+
+    // Header bar
+    gfx_fillrect(p_x + 1, p_y + 1, p_w - 2, 24, RGB(24, 32, 54));
+    gfx_draw_line(p_x + 1, p_y + 25, p_x + p_w - 2, p_y + 25, RGB(65, 85, 140));
+    gfx_draw_string(p_x + 8, p_y + 6, "* SYSTEM LIVE MONITOR", COLOR_ACCENT, COLOR_TRANSPARENT);
+    gfx_draw_string(p_x + p_w - 46, p_y + 6, "[F11]", RGB(160, 190, 240), COLOR_TRANSPARENT);
+
+    int cy = p_y + 30;
+    int line_h = 15;
+    char buf[64];
+
+    // 1. Loop & Kernel status
+    snprintf(buf, sizeof(buf), "Loop Frame: #%u (%u FPS)", g_frame_counter, g_fps);
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "Kernel    : RUNNING (ACTIVE)");
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_GREEN, COLOR_TRANSPARENT);
+    cy += line_h + 3;
+
+    // Divider
+    gfx_draw_line(p_x + 8, cy, p_x + p_w - 8, cy, RGB(35, 45, 70));
+    cy += 5;
+
+    // 2. Hardware Timers & Timekeeping
+    snprintf(buf, sizeof(buf), "CPU TSC   : %u MHz", pit_get_tsc_mhz());
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "Uptime    : %u sec (%u ms)", pit_get_uptime_seconds(), pit_get_uptime_ms());
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    int hw_timer = pit_is_hardware_irq_active();
+    snprintf(buf, sizeof(buf), "Timer Src : %s", hw_timer ? "IRQ0 HARDWARE" : "TSC+CMOS FALLBACK");
+    gfx_draw_string(p_x + 8, cy, buf, hw_timer ? COLOR_GREEN : COLOR_YELLOW, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    unsigned int cmos_h = 0, cmos_m = 0, cmos_s = 0;
+    rtc_get_raw_cmos_time(&cmos_h, &cmos_m, &cmos_s);
+    snprintf(buf, sizeof(buf), "CMOS Clock: %02u:%02u:%02u (Atomic)", cmos_h, cmos_m, cmos_s);
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h + 3;
+
+    // Divider
+    gfx_draw_line(p_x + 8, cy, p_x + p_w - 8, cy, RGB(35, 45, 70));
+    cy += 5;
+
+    // 3. Interrupt Counters
+    snprintf(buf, sizeof(buf), "IRQ0 (Timer) : %u", idt_get_irq_count(0));
+    gfx_draw_string(p_x + 8, cy, buf, (idt_get_irq_count(0) > 0) ? COLOR_GREEN : RGB(230, 100, 100), COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "IRQ1 (Kbd)   : %u", idt_get_irq_count(1));
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "IRQ12 (Mouse): %u", idt_get_irq_count(12));
+    gfx_draw_string(p_x + 8, cy, buf, (idt_get_irq_count(12) > 0) ? COLOR_GREEN : RGB(200, 200, 200), COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "Spurious IRQ : %u", idt_get_spurious_count());
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_TEXT_MUTED, COLOR_TRANSPARENT);
+    cy += line_h + 3;
+
+    // Divider
+    gfx_draw_line(p_x + 8, cy, p_x + p_w - 8, cy, RGB(35, 45, 70));
+    cy += 5;
+
+    // 4. Local APIC
+    snprintf(buf, sizeof(buf), "APIC Base : 0x%08X", pic_get_apic_base());
+    gfx_draw_string(p_x + 8, cy, buf, RGB(180, 200, 240), COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "LINT0 Reg : 0x%08X", pic_get_apic_lint0());
+    gfx_draw_string(p_x + 8, cy, buf, RGB(180, 200, 240), COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "SVR / TPR : 0x%X / 0x%X", pic_get_apic_svr(), pic_get_apic_tpr());
+    gfx_draw_string(p_x + 8, cy, buf, RGB(180, 200, 240), COLOR_TRANSPARENT);
+    cy += line_h + 3;
+
+    // Divider
+    gfx_draw_line(p_x + 8, cy, p_x + p_w - 8, cy, RGB(35, 45, 70));
+    cy += 5;
+
+    // 5. Input Subsystem
+    snprintf(buf, sizeof(buf), "8042 Status: 0x%02X (Out=%d In=%d)", inb(0x64), inb(0x64) & 1, (inb(0x64) >> 1) & 1);
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "Last Scan  : 0x%02X", kbd_last_scancode());
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "Mouse Pos  : (%d, %d)", mouse_get_x(), mouse_get_y());
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h;
+
+    snprintf(buf, sizeof(buf), "Mouse Byte : 0x%02X (Cyc:%d L:%d)", mouse_get_last_byte(), mouse_get_cycle(), mouse_is_left_down());
+    gfx_draw_string(p_x + 8, cy, buf, COLOR_WHITE, COLOR_TRANSPARENT);
+    cy += line_h + 3;
+
+    // Divider
+    gfx_draw_line(p_x + 8, cy, p_x + p_w - 8, cy, RGB(35, 45, 70));
+    cy += 5;
+
+    // 6. Navigation Shortcuts
+    gfx_draw_string(p_x + 8, cy, "[Tab/F11]  Toggle This HUD", COLOR_ACCENT, COLOR_TRANSPARENT);
+    cy += line_h;
+    gfx_draw_string(p_x + 8, cy, "[Arrows]   Move Mousekeys", RGB(140, 210, 180), COLOR_TRANSPARENT);
+    cy += line_h;
+    gfx_draw_string(p_x + 8, cy, "[Enter]    Click Cursor", RGB(140, 210, 180), COLOR_TRANSPARENT);
+    cy += line_h;
+    gfx_draw_string(p_x + 8, cy, "[Home]     Center Mouse", RGB(140, 210, 180), COLOR_TRANSPARENT);
 }
 
 static void draw_login_screen(void) {
@@ -930,11 +1124,33 @@ static void draw_login_screen(void) {
     gfx_fillrect(sht_x, sht_y, 90, 26, RGB(38, 20, 24));
     gfx_drawrect(sht_x, sht_y, 90, 26, COLOR_RED);
     gfx_draw_string(sht_x + 10, sht_y + 5, "Shut Down", COLOR_RED, COLOR_TRANSPARENT);
+
+    // 6. Draw Live System Debug Monitor Overlay
+    draw_debug_sidebar();
 }
 
 static void handle_login_click(int mx, int my) {
     int w = gfx_get_width();
     int h = gfx_get_height();
+
+    // Check click on Debug HUD header or badge on login screen
+    int p_w = 264;
+    int p_x = w - p_w - 8;
+    int p_y = 8;
+    if (g_debug_hud_open) {
+        if (mx >= p_x && mx <= p_x + p_w && my >= p_y && my <= p_y + 26) {
+            g_debug_hud_open = 0;
+            return;
+        }
+    } else {
+        int badge_w = 76;
+        int badge_x = w - badge_w - 10;
+        int badge_y = 10;
+        if (mx >= badge_x && mx <= badge_x + badge_w && my >= badge_y && my <= badge_y + 24) {
+            g_debug_hud_open = 1;
+            return;
+        }
+    }
 
     int card_w = 400;
     int card_h = 320;
@@ -977,6 +1193,10 @@ static void handle_login_click(int mx, int my) {
 }
 
 static void handle_login_key(char key) {
+    if (key == '\t' || key == '`' || (unsigned char)key == KEY_F11 || (unsigned char)key == KEY_F12) {
+        g_debug_hud_open = !g_debug_hud_open;
+        return;
+    }
     if (key == '\r' || key == '\n') {
         if (sys_verify_password(login_input)) {
             g_logged_in = 1;
@@ -1134,15 +1354,19 @@ void kernel_main(boot_info_t *bi) {
             draw_login_screen();
             gfx_draw_cursor(mx, my);
             gfx_swap_buffers();
-            if (!kbd_has_char()) {
-                __asm__ volatile ("sti; hlt");
-            }
+            timer_wait_frame_or_input();
             continue;
         }
 
         // 1. Process keyboard events
         while (kbd_has_char()) {
             char key = kbd_get_char();
+
+            // Toggle Live System Debug Monitor HUD
+            if (key == '\t' || key == '`' || (unsigned char)key == KEY_F11 || (unsigned char)key == KEY_F12) {
+                g_debug_hud_open = !g_debug_hud_open;
+                continue;
+            }
 
             // Keyboard Mousekeys: Arrow keys move the mouse cursor! (Hold Shift for precision mode)
             int step = kbd_is_shift_down() ? 6 : 18;
@@ -1255,15 +1479,16 @@ void kernel_main(boot_info_t *bi) {
         draw_taskbar();
         draw_start_menu();
 
-        // 4. Render Mouse Cursor on top
+        // 4. Render Live System Debug Monitor HUD
+        draw_debug_sidebar();
+
+        // 5. Render Mouse Cursor on top
         gfx_draw_cursor(mx, my);
 
-        // 5. Blit backbuffer to VRAM
+        // 6. Blit backbuffer to VRAM
         gfx_swap_buffers();
 
-        // 6. Halt CPU until next interrupt (power efficient & smooth timing)
-        if (!kbd_has_char()) {
-            __asm__ volatile ("sti; hlt");
-        }
+        // 7. Smooth 60 FPS frame pacing & multi-source timekeeping
+        timer_wait_frame_or_input();
     }
 }

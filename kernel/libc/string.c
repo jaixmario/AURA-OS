@@ -255,3 +255,39 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
     va_end(args);
     return (int)idx;
 }
+
+// 64-bit unsigned division & modulo helpers for 32-bit freestanding target (compiler-rt)
+unsigned long long __udivdi3(unsigned long long a, unsigned long long b) {
+    if (b > a || b == 0) return 0;
+    if ((b >> 32) == 0) {
+        unsigned int d = (unsigned int)b;
+        unsigned int n_hi = (unsigned int)(a >> 32);
+        unsigned int n_lo = (unsigned int)a;
+        unsigned int q_hi = 0, q_lo = 0;
+        if (n_hi >= d) {
+            q_hi = n_hi / d;
+            n_hi %= d;
+        }
+        __asm__ volatile ("divl %4"
+                          : "=a"(q_lo), "=d"(n_hi)
+                          : "a"(n_lo), "d"(n_hi), "r"(d));
+        return ((unsigned long long)q_hi << 32) | q_lo;
+    }
+    // Shift-subtract bitwise binary division
+    unsigned long long q = 0;
+    unsigned long long r = 0;
+    for (int i = 63; i >= 0; i--) {
+        r = (r << 1) | ((a >> i) & 1);
+        if (r >= b) {
+            r -= b;
+            q |= (1ULL << i);
+        }
+    }
+    return q;
+}
+
+unsigned long long __umoddi3(unsigned long long a, unsigned long long b) {
+    if (b > a || b == 0) return a;
+    unsigned long long q = __udivdi3(a, b);
+    return a - (q * b);
+}

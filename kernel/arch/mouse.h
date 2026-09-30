@@ -16,5 +16,7 @@ void mouse_inject_click(int left, int right);
 void mouse_center(void);
 int  mouse_is_detected(void);
 void mouse_handle_byte(unsigned char b);
+unsigned char mouse_get_last_byte(void);
+unsigned char mouse_get_cycle(void);
 
 #endif

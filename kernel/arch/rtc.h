@@ -23,5 +23,6 @@ void rtc_adjust_year(int delta);
 
 void rtc_get_time_string(char *buf, unsigned int size);
 void rtc_get_date_string(char *buf, unsigned int size);
+void rtc_get_raw_cmos_time(unsigned int *h, unsigned int *m, unsigned int *s);
 
 #endif

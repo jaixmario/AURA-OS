@@ -101,6 +101,8 @@ void kbd_handle_scancode(unsigned char scancode) {
             else if (scancode == 0x4B) ch = (char)KEY_LEFT;
             else if (scancode == 0x4D) ch = (char)KEY_RIGHT;
             else if (scancode == 0x47) ch = (char)KEY_HOME;
+            else if (scancode == 0x57) ch = (char)KEY_F11;
+            else if (scancode == 0x58) ch = (char)KEY_F12;
         }
         if (is_upper && ch >= 'a' && ch <= 'z') {
             ch -= 32;

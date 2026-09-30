@@ -81,11 +81,27 @@ void isr_handler(registers_t *regs) {
     }
 }
 
+static volatile unsigned int g_irq_counts[16] = {0};
+static volatile unsigned int g_spurious_irq_count = 0;
+
+unsigned int idt_get_irq_count(int irq) {
+    if (irq >= 0 && irq < 16) return g_irq_counts[irq];
+    return 0;
+}
+
+unsigned int idt_get_spurious_count(void) {
+    return g_spurious_irq_count;
+}
+
 void irq_handler(registers_t *regs) {
+    if (regs->int_no >= 32 && regs->int_no < 48) {
+        g_irq_counts[regs->int_no - 32]++;
+    }
     if (interrupt_handlers[regs->int_no] != 0) {
         isr_handler_t handler = interrupt_handlers[regs->int_no];
         handler(regs);
     } else {
+        g_spurious_irq_count++;
         // Safety guard for unhandled 8042 controller interrupts (IRQ1 or IRQ12):
         // If data is pending in port 0x60, read it to de-assert the controller line!
         if (regs->int_no == 33 || regs->int_no == 44) {
@@ -94,8 +110,11 @@ void irq_handler(registers_t *regs) {
             }
         }
     }
-    // EOI
+    // EOI to 8259 PIC
     pic_send_eoi(regs->int_no - 32);
+
+    // EOI to Local APIC if active
+    pic_apic_eoi();
 }
 
 // Stubs declared in k_entry.asm
