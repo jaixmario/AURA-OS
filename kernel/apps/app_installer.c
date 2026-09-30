@@ -106,7 +106,12 @@ static void installer_draw_step_welcome(int cx, int cy, int cw) {
     int disk_ok = ata_is_available();
 
     char line1[64], line2[64], line3[64], line4[80], line5[80];
-    snprintf(line1, sizeof(line1), "- Boot Mode     : Live CD / USB Bootable Media");
+    if (ata_get_atapi_count() > 0) {
+        const ata_device_t *opt = ata_get_atapi_device();
+        snprintf(line1, sizeof(line1), "- Boot Media    : %s (Live ISO)", opt ? opt->model : "ATAPI CD-ROM");
+    } else {
+        snprintf(line1, sizeof(line1), "- Boot Mode     : Live CD / USB Bootable Media");
+    }
     snprintf(line2, sizeof(line2), "- Architecture  : i686 32-bit Protected Mode");
     snprintf(line3, sizeof(line3), "- Video Engine  : VESA VBE Multi-Resolution TrueColor");
     snprintf(line4, sizeof(line4), "- Target Storage: %s", ata_get_location_string());
@@ -820,6 +825,10 @@ static void installer_on_key(window_t *win, char key) {
 }
 
 void app_installer_launch(void) {
+    if (!ata_is_available()) {
+        ata_init();
+    }
+
     if (installer_win && installer_win->is_open) {
         wm_focus_window(installer_win);
         return;
@@ -834,8 +843,10 @@ void app_installer_launch(void) {
 
     int win_w = 680;
     int win_h = 460;
-    int win_x = (1024 - win_w) / 2;
-    int win_y = (768 - 48 - win_h) / 2;
+    int win_x = (gfx_get_width() - win_w) / 2;
+    int win_y = (gfx_get_height() - 48 - win_h) / 2;
+    if (win_x < 10) win_x = 10;
+    if (win_y < 10) win_y = 10;
 
     installer_win = wm_create_window("✦ Install AuraOS 1.0 - Setup Wizard", win_x, win_y, win_w, win_h, RGB(24, 26, 38));
     if (installer_win) {

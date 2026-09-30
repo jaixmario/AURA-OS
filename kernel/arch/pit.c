@@ -119,8 +119,8 @@ void timer_wait_frame_or_input(void) {
     if (g_last_frame_tsc == 0) g_last_frame_tsc = rdtsc();
 
     while (1) {
-        // 1. If keyboard already has a scancode queued, return immediately
-        if (kbd_has_char()) {
+        // 1. If keyboard scancode or mouse packet arrived, return immediately for instant input response
+        if (kbd_has_char() || mouse_has_event()) {
             break;
         }
 

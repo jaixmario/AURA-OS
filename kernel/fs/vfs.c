@@ -300,18 +300,16 @@ void vfs_init(void) {
     disk_backed = 0;
     memset(files, 0, VFS_MAX_FILES * sizeof(vfs_file_t));
 
+    // ALWAYS initialize the ATA/IDE storage driver so physical & virtual hard disks are detected
+    int ata_ok = ata_init();
+
     boot_info_t *bi = get_boot_info();
     int is_live = (bi && bi->is_live_media != 0);
 
-    // Only probe legacy ATA hard drive when booting from installed hard disk!
-    // Booting from Live USB / ISO runs from RAM VFS and must not probe non-existent IDE ports.
-    if (!is_live) {
-        int ata_ok = ata_init();
-        if (ata_ok == 0 || ata_is_available()) {
-            disk_backed = 1;
-            memset(&disk_sb, 0, sizeof(disk_sb));
+    if (ata_ok == 0 || ata_is_available()) {
+        memset(&disk_sb, 0, sizeof(disk_sb));
 
-            int r = ata_read_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &disk_sb);
+        int r = ata_read_sectors(ATA_FS_SUPER_LBA, ATA_FS_SUPER_SECTORS, &disk_sb);
         if (r == 0 && disk_sb.magic == ATA_FS_MAGIC && disk_sb.version == ATA_FS_VERSION && disk_sb.file_count > 0 && disk_sb.file_count <= VFS_MAX_FILES) {
             file_count = disk_sb.file_count;
             for (int i = 0; i < file_count; i++) {
@@ -334,9 +332,11 @@ void vfs_init(void) {
                 ata_read_sectors(files[i].disk_lba, ATA_SECTORS_PER_FILE, files[i].data);
                 files[i].data[files[i].size] = '\0';
             }
+            if (!is_live) {
+                disk_backed = 1;
+            }
             return;
         }
-    }
     }
 
     // First boot or unformatted disk: initialize core default files with folders

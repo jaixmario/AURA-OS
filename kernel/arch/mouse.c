@@ -11,10 +11,11 @@ static int max_x = 1024;
 static int max_y = 768;
 
 static unsigned char mouse_cycle = 0;
-static signed char mouse_bytes[4];
+static unsigned char mouse_bytes[4];
 static int mouse_packet_size = 3;
 static unsigned int last_mouse_byte_tick = 0;
 static volatile unsigned char g_last_mouse_byte = 0;
+static volatile int g_mouse_event_flag = 0;
 
 static int btn_left = 0;
 static int btn_right = 0;
@@ -81,7 +82,7 @@ static int mouse_send_cmd(unsigned char cmd) {
 }
 
 static void mouse_decode_packet(void) {
-    unsigned char flags = (unsigned char)mouse_bytes[0];
+    unsigned char flags = mouse_bytes[0];
     int dx = (int)mouse_bytes[1];
     int dy = (int)mouse_bytes[2];
 
@@ -91,8 +92,8 @@ static void mouse_decode_packet(void) {
 
     // Discard packet if overflow occurred (bit 6 X-overflow, bit 7 Y-overflow)
     if (!(flags & 0xC0)) {
-        // Sanity limit on extreme delta jumps
-        if (dx > -300 && dx < 300 && dy > -300 && dy < 300) {
+        // Sanity limit on extreme delta jumps (comfortably accommodates swift flicks across 1080p)
+        if (dx > -450 && dx < 450 && dy > -450 && dy < 450) {
             int abs_dx = (dx < 0) ? -dx : dx;
             int abs_dy = (dy < 0) ? -dy : dy;
 
@@ -113,17 +114,26 @@ static void mouse_decode_packet(void) {
             if (mouse_x >= max_x) mouse_x = max_x - 1;
             if (mouse_y < 0) mouse_y = 0;
             if (mouse_y >= max_y) mouse_y = max_y - 1;
+
+            g_mouse_event_flag = 1;
         }
     }
 
-    btn_left   = (flags & 0x01) ? 1 : 0;
-    btn_right  = (flags & 0x02) ? 1 : 0;
-    btn_middle = (flags & 0x04) ? 1 : 0;
+    int new_left   = (flags & 0x01) ? 1 : 0;
+    int new_right  = (flags & 0x02) ? 1 : 0;
+    int new_middle = (flags & 0x04) ? 1 : 0;
 
-    if (btn_left && !prev_btn_left) {
+    if (new_left != btn_left || new_right != btn_right || new_middle != btn_middle) {
+        g_mouse_event_flag = 1;
+    }
+
+    if (new_left && !prev_btn_left) {
         left_clicked = 1;
     }
-    prev_btn_left = btn_left;
+    prev_btn_left = new_left;
+    btn_left   = new_left;
+    btn_right  = new_right;
+    btn_middle = new_middle;
 }
 
 void mouse_handle_byte(unsigned char b) {
@@ -138,20 +148,20 @@ void mouse_handle_byte(unsigned char b) {
     if (mouse_cycle == 0) {
         // First byte of PS/2 mouse packet must have bit 3 set to 1
         if ((b & 0x08) == 0x08) {
-            mouse_bytes[0] = (signed char)b;
+            mouse_bytes[0] = b;
             mouse_cycle = 1;
         }
         return;
     }
 
     if (mouse_cycle == 1) {
-        mouse_bytes[1] = (signed char)b;
+        mouse_bytes[1] = b;
         mouse_cycle = 2;
         return;
     }
 
     if (mouse_cycle == 2) {
-        mouse_bytes[2] = (signed char)b;
+        mouse_bytes[2] = b;
         if (mouse_packet_size == 4) {
             mouse_cycle = 3;
             return;
@@ -162,7 +172,7 @@ void mouse_handle_byte(unsigned char b) {
     }
 
     if (mouse_cycle == 3) {
-        mouse_bytes[3] = (signed char)b;
+        mouse_bytes[3] = b;
         mouse_cycle = 0;
         mouse_decode_packet();
         return;
@@ -293,11 +303,13 @@ void mouse_move_relative(int dx, int dy) {
     if (mouse_x >= max_x) mouse_x = max_x - 1;
     if (mouse_y < 0) mouse_y = 0;
     if (mouse_y >= max_y) mouse_y = max_y - 1;
+    g_mouse_event_flag = 1;
 }
 
 void mouse_center(void) {
     mouse_x = max_x / 2;
     mouse_y = max_y / 2;
+    g_mouse_event_flag = 1;
 }
 
 void mouse_inject_click(int left, int right) {
@@ -306,6 +318,7 @@ void mouse_inject_click(int left, int right) {
     }
     btn_left = 0;
     btn_right = 0;
+    g_mouse_event_flag = 1;
 }
 
 int mouse_get_x(void) {
@@ -352,4 +365,12 @@ void mouse_set_bounds(int screen_w, int screen_h) {
     max_y = screen_h;
     if (mouse_x >= max_x) mouse_x = max_x - 1;
     if (mouse_y >= max_y) mouse_y = max_y - 1;
+}
+
+int mouse_has_event(void) {
+    return g_mouse_event_flag;
+}
+
+void mouse_clear_event(void) {
+    g_mouse_event_flag = 0;
 }

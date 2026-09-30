@@ -30,9 +30,11 @@ typedef struct {
 int  ata_init(void);
 int  ata_is_available(void);
 int  ata_get_drive_count(void);
+int  ata_get_atapi_count(void);
 int  ata_get_active_drive(void);
 int  ata_select_drive(int drive_index);
 const ata_device_t *ata_get_device(int drive_index);
+const ata_device_t *ata_get_atapi_device(void);
 
 unsigned int ata_get_total_sectors(void);
 unsigned int ata_get_size_mb(void);

@@ -1360,6 +1360,7 @@ void kernel_main(boot_info_t *bi) {
             int mx = mouse_get_x();
             int my = mouse_get_y();
             int clicked = mouse_clicked(0);
+            mouse_clear_event();
             if (clicked) {
                 handle_login_click(mx, my);
             }
@@ -1479,6 +1480,7 @@ void kernel_main(boot_info_t *bi) {
         int my = mouse_get_y();
         int btn_left = mouse_is_left_down();
         int clicked = mouse_clicked(0);
+        mouse_clear_event();
 
         if (clicked) {
             handle_desktop_click(mx, my);

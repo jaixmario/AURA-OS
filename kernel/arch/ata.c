@@ -63,8 +63,13 @@ static int ata_probe_single(unsigned short io_base, unsigned short ctrl_base, un
     outb(io_base + 7, ATA_CMD_IDENTIFY);
     ata_delay_400ns(ctrl_base);
 
-    status = inb(io_base + 7);
-    if (status == 0) {
+    // Poll status register up to 1000 iterations for slow hardware or optical drives
+    for (int t = 0; t < 1000; t++) {
+        status = inb(io_base + 7);
+        if (status != 0 && status != 0xFF) break;
+        io_wait();
+    }
+    if (status == 0 || status == 0xFF) {
         // Drive does not exist
         return -1;
     }
@@ -79,7 +84,28 @@ static int ata_probe_single(unsigned short io_base, unsigned short ctrl_base, un
     if ((mid == 0x14 && high == 0xEB) || (mid == 0x69 && high == 0x96)) {
         dev->present = 1;
         dev->is_atapi = 1;
-        strcpy(dev->model, "ATAPI Optical CD/DVD Drive");
+        strcpy(dev->model, "ATAPI CD/DVD Optical Drive");
+        // Issue IDENTIFY PACKET DEVICE (0xA1) to read true optical drive model name
+        outb(io_base + 7, 0xA1);
+        ata_delay_400ns(ctrl_base);
+        if (ata_wait_drq(io_base) == 0) {
+            unsigned short id_pkt[256];
+            for (int i = 0; i < 256; i++) {
+                id_pkt[i] = inw(io_base + 0);
+            }
+            int m_idx = 0;
+            for (int i = 0; i < 20; i++) {
+                unsigned short w = id_pkt[27 + i];
+                char c1 = (char)((w >> 8) & 0xFF);
+                char c2 = (char)(w & 0xFF);
+                dev->model[m_idx++] = (c1 >= 32 && c1 <= 126) ? c1 : ' ';
+                dev->model[m_idx++] = (c2 >= 32 && c2 <= 126) ? c2 : ' ';
+            }
+            dev->model[m_idx] = '\0';
+            while (m_idx > 0 && dev->model[m_idx - 1] == ' ') {
+                dev->model[--m_idx] = '\0';
+            }
+        }
         return 0;
     }
 
@@ -171,6 +197,16 @@ int ata_get_drive_count(void) {
     return ata_drive_count;
 }
 
+int ata_get_atapi_count(void) {
+    int count = 0;
+    for (int i = 0; i < 4; i++) {
+        if (ata_drives[i].present && ata_drives[i].is_atapi) {
+            count++;
+        }
+    }
+    return count;
+}
+
 int ata_get_active_drive(void) {
     return ata_active_drive;
 }
@@ -186,6 +222,15 @@ int ata_select_drive(int drive_index) {
 const ata_device_t *ata_get_device(int drive_index) {
     if (drive_index >= 0 && drive_index < 4) {
         return &ata_drives[drive_index];
+    }
+    return 0;
+}
+
+const ata_device_t *ata_get_atapi_device(void) {
+    for (int i = 0; i < 4; i++) {
+        if (ata_drives[i].present && ata_drives[i].is_atapi) {
+            return &ata_drives[i];
+        }
     }
     return 0;
 }

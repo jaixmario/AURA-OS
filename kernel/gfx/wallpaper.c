@@ -6,12 +6,16 @@
 
 // Dedicated safe buffer in low extended memory:
 // 0x00C00000 (12MB mark): 1024x768 decoded wallpaper source (3.14MB, ends at 15.14MB)
-// This strictly avoids all overlap with the 1080p backbuffer (0x00200000 - 0x00A70000)
-// and is fully documented in System Info (app_term.c).
+// 0x01000000 (16MB mark): Pre-scaled wallpaper desktop buffer up to 1080p (8.3MB, ends at 24MB)
+// Both strictly avoid all overlap with the backbuffer (0x00200000) and Paint (0x01900000)
 static unsigned int *g_raw_1024 = (unsigned int *)0x00C00000;
+static unsigned int *g_scaled_desktop = (unsigned int *)0x01000000;
 
 static int g_current_wallpaper = 0;
 static int g_loaded_wallpaper = -1;
+static int g_scaled_w = 0;
+static int g_scaled_h = 0;
+static int g_scaled_wallpaper = -1;
 
 typedef struct {
     const unsigned char *data;
@@ -157,6 +161,9 @@ void wallpaper_init(void) {
 
 void wallpaper_invalidate(void) {
     g_loaded_wallpaper = -1;
+    g_scaled_w = 0;
+    g_scaled_h = 0;
+    g_scaled_wallpaper = -1;
 }
 
 int wallpaper_get_count(void) {
@@ -185,21 +192,61 @@ int wallpaper_get_current(void) {
 void wallpaper_set(int id) {
     if (id < 0 || id >= WALLPAPER_COUNT) return;
     g_current_wallpaper = id;
+    g_scaled_wallpaper = -1;
     wallpaper_decode_current();
+}
+
+static void wallpaper_prepare_scaled(int screen_w, int screen_h) {
+    if (g_loaded_wallpaper != g_current_wallpaper) {
+        wallpaper_decode_current();
+    }
+
+    if (screen_w == 1024 && screen_h == 768) {
+        g_scaled_w = 1024;
+        g_scaled_h = 768;
+        g_scaled_wallpaper = g_current_wallpaper;
+        return;
+    }
+
+    if (g_scaled_w == screen_w && g_scaled_h == screen_h && g_scaled_wallpaper == g_current_wallpaper) {
+        return;
+    }
+
+    // Precalculate horizontal mapping lookup table (up to 1920 columns)
+    static int x_table[1920];
+    int max_map_w = (screen_w <= 1920) ? screen_w : 1920;
+    for (int x = 0; x < max_map_w; x++) {
+        x_table[x] = (x * 1024) / screen_w;
+    }
+
+    for (int y = 0; y < screen_h; y++) {
+        int src_y = (y * 768) / screen_h;
+        if (src_y >= 768) src_y = 767;
+        const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
+        unsigned int *dst_row = g_scaled_desktop + (y * screen_w);
+        for (int x = 0; x < screen_w; x++) {
+            int sx = (x < 1920) ? x_table[x] : ((x * 1024) / screen_w);
+            if (sx >= 1024) sx = 1023;
+            dst_row[x] = src_row[sx];
+        }
+    }
+
+    g_scaled_w = screen_w;
+    g_scaled_h = screen_h;
+    g_scaled_wallpaper = g_current_wallpaper;
 }
 
 void wallpaper_draw_desktop(void) {
     int screen_w = gfx_get_width();
     int screen_h = gfx_get_height();
 
-    if (g_loaded_wallpaper != g_current_wallpaper) {
-        wallpaper_decode_current();
-    }
-
-    unsigned int *dst = gfx_get_backbuffer();
     if (screen_w == 1024 && screen_h == 768) {
+        if (g_loaded_wallpaper != g_current_wallpaper) {
+            wallpaper_decode_current();
+        }
         int total = 1024 * 768;
         const unsigned int *src = g_raw_1024;
+        unsigned int *dst = gfx_get_backbuffer();
         __asm__ volatile (
             "cld\n"
             "rep movsl\n"
@@ -208,15 +255,19 @@ void wallpaper_draw_desktop(void) {
             : "memory"
         );
     } else {
-        for (int y = 0; y < screen_h; y++) {
-            int src_y = (y * 768) / screen_h;
-            unsigned int *dst_row = dst + (y * screen_w);
-            const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
-            for (int x = 0; x < screen_w; x++) {
-                int src_x = (x * 1024) / screen_w;
-                dst_row[x] = src_row[src_x];
-            }
+        if (g_scaled_w != screen_w || g_scaled_h != screen_h || g_scaled_wallpaper != g_current_wallpaper) {
+            wallpaper_prepare_scaled(screen_w, screen_h);
         }
+        int total = screen_w * screen_h;
+        const unsigned int *src = g_scaled_desktop;
+        unsigned int *dst = gfx_get_backbuffer();
+        __asm__ volatile (
+            "cld\n"
+            "rep movsl\n"
+            : "+D"(dst), "+S"(src), "+c"(total)
+            :
+            : "memory"
+        );
     }
 }
 
@@ -224,22 +275,26 @@ void wallpaper_draw_tinted(void) {
     int screen_w = gfx_get_width();
     int screen_h = gfx_get_height();
 
-    if (g_loaded_wallpaper != g_current_wallpaper) {
-        wallpaper_decode_current();
+    const unsigned int *src = g_raw_1024;
+    if (screen_w == 1024 && screen_h == 768) {
+        if (g_loaded_wallpaper != g_current_wallpaper) {
+            wallpaper_decode_current();
+        }
+        src = g_raw_1024;
+    } else {
+        if (g_scaled_w != screen_w || g_scaled_h != screen_h || g_scaled_wallpaper != g_current_wallpaper) {
+            wallpaper_prepare_scaled(screen_w, screen_h);
+        }
+        src = g_scaled_desktop;
     }
 
     unsigned int *dst = gfx_get_backbuffer();
-    for (int y = 0; y < screen_h; y++) {
-        int src_y = (y * 768) / screen_h;
-        unsigned int *dst_row = dst + (y * screen_w);
-        const unsigned int *src_row = g_raw_1024 + (src_y * 1024);
-        for (int x = 0; x < screen_w; x++) {
-            int src_x = (x * 1024) / screen_w;
-            unsigned int c = src_row[src_x];
-            unsigned int r = ((c >> 16) & 0xFF) * 40 / 100;
-            unsigned int g = ((c >> 8) & 0xFF) * 40 / 100;
-            unsigned int b = (c & 0xFF) * 50 / 100;
-            dst_row[x] = (r << 16) | (g << 8) | b;
-        }
+    int total = screen_w * screen_h;
+    for (int i = 0; i < total; i++) {
+        unsigned int c = src[i];
+        unsigned int r = ((c >> 16) & 0xFF) * 40 / 100;
+        unsigned int g = ((c >> 8) & 0xFF) * 40 / 100;
+        unsigned int b = (c & 0xFF) * 50 / 100;
+        dst[i] = (r << 16) | (g << 8) | b;
     }
 }

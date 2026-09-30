@@ -18,5 +18,7 @@ int  mouse_is_detected(void);
 void mouse_handle_byte(unsigned char b);
 unsigned char mouse_get_last_byte(void);
 unsigned char mouse_get_cycle(void);
+int  mouse_has_event(void);
+void mouse_clear_event(void);
 
 #endif
